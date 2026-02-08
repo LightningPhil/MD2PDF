@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "project": {
+    "name": "MD2PDF",
+    "description": "Web app that loads/edits Markdown and renders it live as paginated A4-style pages with KaTeX math support",
+    "author": "Philip Leichauer"
+  },
+  "repository": {
+    "name": "MD2PDF",
+    "provider": "github",
+    "owner": "LightningPhil",
+    "defaultBranch": "main",
+    "remoteUrl": "https://github.com/LightningPhil/MD2PDF.git"
+  },
+  "maintainer": {
+    "name": "Philip Leichauer",
+    "email": ""
+  },
+  "git": {
+    "initialCommitMessage": "chore: initial commit",
+    "includeAll": true,
+    "signoff": false,
+    "gpgSign": false
+  },
+  "files": {
+    "ensureGitignore": true,
+    "gitignoreTemplate": "Node",
+    "ensureGitattributes": true,
+    "ensureReadme": false,
+    "ensureLicense": false
+  },
+  "notes": {
+    "fromProjectPlan": [
+      "Phase 1 is a previewer only; PDF export deferred to Phase 2",
+      "Split-pane UI: Markdown editor (left) + paginated A4 preview (right)",
+      "KaTeX for math rendering with HTML/SVG toggle option",
+      "Must handle clean page breaks (avoid mid-equation/table splits)",
+      "File controls: upload .md files and save .md files"
+    ],
+    "todos": [
+      "Confirm remoteUrl matches actual GitHub repository or blank if undesired"
+    ]
+  }
+}

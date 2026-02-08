@@ -1,0 +1,186 @@
+# ============================================================
+# OpenAI Codex Project Configuration
+# Low-friction autonomous development with safety rails
+# ============================================================
+
+##############################
+# Project defaults
+##############################
+
+[project]
+preferred_package_manager = "pnpm"
+
+##############################
+# Security & approvals
+##############################
+
+[security]
+# auto = allow safe ops, ask for risky
+# full = allow almost everything (not recommended globally)
+mode = "auto"
+
+# --------------------------------------------
+# Commands Codex may run without prompting
+# --------------------------------------------
+
+[[security.trusted_commands]]
+command = "pnpm install"
+
+[[security.trusted_commands]]
+command = "pnpm dev"
+
+[[security.trusted_commands]]
+command = "pnpm test"
+
+[[security.trusted_commands]]
+command = "pnpm run dev"
+
+[[security.trusted_commands]]
+command = "pnpm run build"
+
+[[security.trusted_commands]]
+command = "pnpm run test"
+
+[[security.trusted_commands]]
+command = "pnpm run lint"
+
+[[security.trusted_commands]]
+command = "pnpm run typecheck"
+
+[[security.trusted_commands]]
+command = "npm install"
+
+[[security.trusted_commands]]
+command = "npm test"
+
+[[security.trusted_commands]]
+command = "npm run dev"
+
+[[security.trusted_commands]]
+command = "npm run build"
+
+[[security.trusted_commands]]
+command = "npm run lint"
+
+[[security.trusted_commands]]
+command = "npm run typecheck"
+
+[[security.trusted_commands]]
+command = "tsc"
+
+[[security.trusted_commands]]
+command = "vitest"
+
+[[security.trusted_commands]]
+command = "pytest"
+
+[[security.trusted_commands]]
+command = "node"
+
+# --------------------------------------------
+# Git commands allowed without prompting
+# --------------------------------------------
+
+[[security.trusted_commands]]
+command = "git status"
+
+[[security.trusted_commands]]
+command = "git diff"
+
+[[security.trusted_commands]]
+command = "git log"
+
+[[security.trusted_commands]]
+command = "git show"
+
+# --------------------------------------------
+# Commands that should always require approval
+# --------------------------------------------
+
+[[security.restricted_commands]]
+command = "rm"
+
+[[security.restricted_commands]]
+command = "del"
+
+[[security.restricted_commands]]
+command = "rmdir"
+
+[[security.restricted_commands]]
+command = "git push"
+
+[[security.restricted_commands]]
+command = "git reset"
+
+[[security.restricted_commands]]
+command = "git clean"
+
+[[security.restricted_commands]]
+command = "npm publish"
+
+[[security.restricted_commands]]
+command = "pnpm publish"
+
+##############################
+# Network policy
+##############################
+
+[security.network]
+allow = true
+allowed_hosts = [
+  "registry.npmjs.org",
+  "pnpm.io",
+  "pypi.org"
+]
+
+##############################
+# Workspace limits
+##############################
+
+[workspace]
+restrict_to_workspace = true
+
+[workspace.ignore]
+paths = [
+  "dist/",
+  "build/",
+  "coverage/",
+  ".nyc_output/",
+  "node_modules/",
+  ".vite/",
+  ".cache/"
+]
+
+[workspace.protected]
+paths = [
+  "LICENSE",
+  "ProjectPlan.md",
+  "Codex.md"
+]
+
+##############################
+# Agent behavior
+##############################
+
+[agent]
+assume_yes_for_safe_ops = true
+retry_failed_commands = true
+max_iterations = 25
+max_runtime_seconds = 1800
+
+[agent.policy]
+run_tests_after_code_changes = true
+run_typecheck_after_code_changes = true
+
+[agent.preferences]
+small_changesets = true
+avoid_large_refactors = true
+
+##############################
+# Logging & audit trail
+##############################
+
+[logging]
+level = "info"
+log_commands = true
+log_file = ".codex/session.log"
