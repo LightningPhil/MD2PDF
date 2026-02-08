@@ -76,6 +76,7 @@ class MD2PDFApp {
       if (!markdown.trim()) {
         // Show empty page for empty content
         this.pageManager.updatePages(document.createElement('div'));
+        this.ui.refreshPreviewViewport();
         return;
       }
       
@@ -85,6 +86,7 @@ class MD2PDFApp {
       
       // Update pages
       this.pageManager.updatePages(htmlContent);
+      this.ui.refreshPreviewViewport();
       
     } catch (error) {
       console.error('Error updating preview:', error);

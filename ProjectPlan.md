@@ -1,299 +1,229 @@
-# ProjectPlan.md --- Markdown → Paginated A4 Web Preview with KaTeX
+# ProjectPlan.md - Markdown to Paginated A4 Preview and PDF Export
 
-## 1. Purpose
+## 1. Product Purpose
 
-Build a small web app that:
+Build a web app that:
 
--   Loads or pastes a Markdown file.
--   Lets the user **edit** it in a left-hand pane.
--   Renders it live on the right as:
-    -   Paginated **A4-style pages**
-    -   With margins like a Word / LaTeX document
-    -   Using KaTeX for math.
--   Ensures:
-    -   Content flows cleanly between pages
-    -   No awkward mid-equation or mid-table splits.
--   Allows:
-    -   Saving the Markdown back to disk.
+- loads or pastes a Markdown document
+- allows editing in a left pane
+- renders a live paginated A4 preview in a right pane
+- renders math with KaTeX
+- preserves clean page flow across pages
+- allows upload and save of Markdown files
+- exports the rendered result to accurate, searchable PDF (Phase 2)
 
-**PDF export is explicitly deferred** to a future file:
-`ProjectPlanPhase2.md`.
+## 2. Phase 1 Status (Implemented)
 
-------------------------------------------------------------------------
+Phase 1 is now considered implemented for the preview workflow.
 
-## 2. Non-Goals for Phase 1
+### 2.1 Implemented capabilities
 
-Out of scope:
+- split-pane editor and preview layout
+- draggable pane divider (20% to 80%)
+- markdown live rendering
+- A4 page containers with configurable margins and font size
+- KaTeX math rendering with HTML/SVG preview toggle
+- improved block-aware pagination with better flow and keep-together rules
+- matrix row-break handling for display math
+- upload and save Markdown
+- preview zoom controls: fit width, fit page, zoom in, zoom out
+- dark/light app theme toggle (default dark)
 
--   PDF generation
--   Font embedding
--   Print dialogs
--   Server-side rendering
--   Advanced typography engines
--   Citation managers
--   Float placement algorithms
--   Multi-column layouts
+### 2.2 Phase 1 constraints kept
 
-This is a **previewer**, not a publishing system yet.
+- no PDF export implemented yet
+- no server-side rendering required for preview
+- preview pages remain white regardless of app theme
 
-------------------------------------------------------------------------
-
-## 3. Target User Experience
-
-Single-page web app:
-
-    +----------------------+--------------------------+
-    |                      |                          |
-    |  Markdown Editor     |   Rendered Pages        |
-    |                      |   (A4 stacked)          |
-    |                      |                          |
-    |                      |  ┌─────────────┐        |
-    |                      |  │  Page 1     │        |
-    |                      |  └─────────────┘        |
-    |                      |  ┌─────────────┐        |
-    |                      |  │  Page 2     │        |
-    |                      |  └─────────────┘        |
-    +----------------------+--------------------------+
-
-Controls:
-
--   Upload `.md`
--   Save `.md`
--   Toggle math output:
-    -   KaTeX HTML
-    -   KaTeX SVG
-
-------------------------------------------------------------------------
-
-## 4. Core Requirements
-
-### 4.1 Markdown Handling
-
-Supported:
-
--   Headings
--   Paragraphs
--   Lists
--   Code blocks
--   Tables
--   Images
--   Horizontal rules
--   Inline math `$...$`
--   Display math `$$...$$`
-
-Markdown parser can be off-the-shelf.
-
-------------------------------------------------------------------------
-
-### 4.2 Rendering
-
--   Markdown → HTML
--   KaTeX renders math inside it.
--   Output lives inside **page containers** sized like A4.
-
-Each page:
-
--   Fixed width/height in CSS
--   Margins
--   White background
--   Drop shadow
--   Stacked vertically.
-
-------------------------------------------------------------------------
-
-### 4.3 Pagination Strategy (Phase 1: Pragmatic)
-
-Instead of a full layout engine:
-
--   Render the document into a hidden container.
--   Measure block heights.
--   Flow blocks into page-sized divs.
--   Start a new page when height exceeds limit.
-
-Rules:
-
--   Headings try to stay with following paragraph.
--   Tables and display-math must:
-    -   Stay intact on one page **if possible**
-    -   Move fully to next page otherwise.
--   Only split tables or matrices if taller than a page.
-
-------------------------------------------------------------------------
-
-### 4.4 KaTeX Modes
-
-KaTeX must be configured so:
-
--   One toggle renders:
-    -   HTML output (font-based)
-    -   SVG output.
--   Both tested visually.
--   Architecture keeps this switch isolated.
-
-This prepares for PDF later.
-
-------------------------------------------------------------------------
-
-### 4.5 Saving & Loading
-
--   Upload `.md` file.
--   Load into editor.
--   Download current editor content as `.md`.
-
-Client-side only.
-
-------------------------------------------------------------------------
-
-## 5. Architecture (Simple)
-
-No monorepo.
+## 3. Current Architecture (Phase 1)
 
 Single frontend app:
 
-    /src
-      editor.ts
-      markdown.ts
-      katex.ts
-      paginator.ts
-      pages.ts
-      ui.ts
-    index.html
-    style.css
+```
+/src
+  editor.ts
+  markdown.ts
+  katex.ts
+  paginator.ts
+  pages.ts
+  ui.ts
+index.html
+style.css
+```
 
 Pipeline:
 
-    Markdown text
-       ↓
-    Markdown → HTML
-       ↓
-    KaTeX render
-       ↓
-    DOM blocks measured
-       ↓
-    Pagination into A4 divs
-       ↓
-    Display
+1. markdown input
+2. markdown parse to DOM
+3. math placeholders preserved from markdown stage
+4. KaTeX render
+5. pagination into A4 pages
+6. preview display with viewport controls
 
-------------------------------------------------------------------------
+## 4. Phase 2 Goal
 
-## 6. Pagination Rules
+Add high-fidelity PDF export from the rendered A4 pages with the following hard requirements:
 
-Page:
+- no rasterization of pages
+- no screenshot-style PDF generation
+- preserve text as searchable/selectable where possible
+- preserve equation readability and quality
+- keep file sizes practical
+- keep output aligned with what the user sees in A4 preview
 
--   A4 portrait
--   CSS mm-based sizing
--   Fixed content height.
+## 5. Phase 2 Non-Negotiables
 
-Block types:
+- SVG math output is not acceptable for PDF export path
+- export must use KaTeX HTML mode for equations
+- output must be page-accurate A4
+- export pipeline must be deterministic and testable
 
-  Block          Behaviour
-  -------------- ------------------------
-  Paragraph      Splittable
-  Heading        Keep with next
-  Display math   Atomic
-  Table          Atomic unless too tall
-  Code block     Atomic if possible
-  Image          Atomic
+## 6. Phase 2 PDF Strategy Options
 
-------------------------------------------------------------------------
+### Option A: Browser print pipeline (recommended)
 
-## 7. Styling
+Approach:
 
-Simple theme for now:
+- build a dedicated print/export DOM from the same paginated page model
+- force math mode to KaTeX HTML for export
+- apply print CSS with strict A4 `@page` sizing and no scaling
+- export via Chromium print-to-PDF (Playwright or equivalent)
 
--   Serif body font
--   Monospace for code
--   Comfortable margins
--   Page numbers optional.
+Pros:
 
-No arbitrary CSS editor.
+- best fidelity to existing rendered preview
+- vector/text-oriented PDF, not raster
+- equations stay crisp without SVG path rasterization
+- implementation complexity is moderate and incremental
 
-------------------------------------------------------------------------
+Cons:
 
-## 8. Public API (internal modules)
+- browser print engine differences must be controlled (lock to Chromium)
+- embedded font behavior needs careful tuning for file size
 
-``` ts
-renderMarkdown(markdown: string): HTMLElement
+### Option B: Custom PDF composition from document AST
 
-renderMath(root: HTMLElement, mode: "html" | "svg"): void
+Approach:
 
-paginate(
-  content: HTMLElement,
-  pageHeightPx: number
-): HTMLElement[]
-```
+- parse markdown and layout content directly into PDF drawing commands
+- reimplement pagination and math layout for PDF writer
 
-------------------------------------------------------------------------
+Pros:
 
-## 9. Phase-1 Milestones
+- maximal control over output internals
 
-### M1 --- Editor + Live Preview
+Cons:
 
--   Split pane UI
--   Markdown typing → preview
--   KaTeX rendering
--   Scrollable pages.
+- highest complexity and risk
+- duplicates layout engine effort already done in browser
+- long timeline before parity with preview
 
-------------------------------------------------------------------------
+### Option C: Alternative server-side HTML-to-PDF engines
 
-### M2 --- Pagination
+Approach:
 
--   A4 sizing
--   Flow blocks into pages
--   Prevent math/table splits.
+- render HTML then convert with external engines (e.g., wkhtmltopdf/WeasyPrint)
 
-------------------------------------------------------------------------
+Pros:
 
-### M3 --- File Handling
+- can be automated in CI/server workflows
 
--   Upload
--   Save
--   Reset.
+Cons:
 
-------------------------------------------------------------------------
+- variable CSS/KaTeX compatibility
+- higher drift risk versus browser preview output
+- may require additional infrastructure
 
-### M4 --- SVG / HTML Toggle
+## 7. Chosen Path for Phase 2
 
--   KaTeX output switch
--   Both modes tested.
+Choose **Option A (Chromium print pipeline with KaTeX HTML mode)**.
 
-------------------------------------------------------------------------
+Reasoning:
 
-## 10. Testing
+- highest practical fidelity to current A4 preview architecture
+- satisfies "no raster screenshot PDF" constraint
+- strongest chance of searchable text while keeping file size reasonable
+- smallest architectural disruption versus current codebase
 
-Manual is fine for Phase 1:
+## 8. Phase 2 Requirements
 
--   Multi-page maths document
--   Huge matrices
--   Long tables
--   Many paragraphs.
+### 8.1 Export UX
 
-------------------------------------------------------------------------
+- add explicit `Export PDF` action
+- keep preview toggle for HTML/SVG in UI, but export must always use HTML math mode
+- show export progress and clear failure messages
 
-## 11. Phase 2 (Separate File Later)
+### 8.2 Export renderer contract
 
-Handled later in:
+- source pages must come from the same paginated model as preview
+- export document must enforce A4 page size and zero browser auto-scaling
+- each preview page maps to exactly one PDF page
 
-    ProjectPlanPhase2.md
+### 8.3 Searchability and quality
 
-Will include:
+- keep text content as text nodes in output DOM
+- avoid canvas snapshots and image flattening
+- validate equation text/search behavior on representative formulas and matrices
 
--   PDF generation
--   Font embedding
--   Vector math
--   Headless Chromium experiments
--   Deterministic layout.
+### 8.4 File size controls
 
-------------------------------------------------------------------------
+- avoid unnecessary font duplication
+- prefer stable font loading and subsetting behavior
+- add size benchmarks to CI/manual checks
 
-## 12. Definition of Done (Phase 1)
+### 8.5 Determinism
 
-This phase is complete when:
+- lock export runtime to known Chromium version
+- lock CSS used in export mode
+- add repeatable regression tests for page count and key layout anchors
 
--   Markdown edits live-update preview.
--   Pages look like A4 sheets.
--   Equations render correctly.
--   No accidental half-equation page breaks.
--   Tables move intact.
--   User can upload and save Markdown.
--   SVG/HTML KaTeX modes can be toggled.
+## 9. Phase 2 Milestones
+
+### M5 - Export Skeleton
+
+- add export command path and print-only DOM
+- implement A4 print CSS contract
+- produce first non-raster PDF from sample documents
+
+### M6 - Fidelity and Searchability
+
+- force KaTeX HTML export mode
+- verify equations/matrices are rendered correctly in PDF
+- verify text and equations are searchable where supported
+
+### M7 - Size and Stability
+
+- optimize fonts and asset loading for smaller PDFs
+- stabilize page-break parity with preview
+- add regression tests and CI gate
+
+### M8 - Release Readiness
+
+- document export limitations and supported environments
+- finalize troubleshooting and QA checklist
+
+## 10. Testing Plan
+
+### 10.1 Manual tests
+
+- long multi-page markdown document
+- dense matrix-heavy document
+- mixed tables, code blocks, and display math
+- verify preview-to-PDF page count parity
+
+### 10.2 Automated checks
+
+- unit tests for export prep logic
+- integration test that exports PDF and validates page count and file signature
+- golden checks for key layout markers on selected pages
+
+## 11. Definition of Done
+
+Phase 2 is complete when:
+
+- Export PDF produces non-raster A4 pages from rendered content
+- No screenshot/canvas flattening is used
+- Output is visually aligned with preview pages
+- Text remains selectable/searchable to the extent supported by KaTeX HTML + Chromium PDF output
+- File sizes are acceptable on sample documents
+- Tests and manual QA checklist pass

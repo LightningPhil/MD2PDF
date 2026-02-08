@@ -9,15 +9,32 @@
 </head>
 <body>
     <div id="app">
+        <button id="themeToggle" class="theme-toggle" aria-label="Switch to light theme" title="Switch to light theme">
+            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8Z"></path>
+            </svg>
+            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"></circle>
+                <line x1="12" y1="2" x2="12" y2="4"></line>
+                <line x1="12" y1="20" x2="12" y2="22"></line>
+                <line x1="4.9" y1="4.9" x2="6.3" y2="6.3"></line>
+                <line x1="17.7" y1="17.7" x2="19.1" y2="19.1"></line>
+                <line x1="2" y1="12" x2="4" y2="12"></line>
+                <line x1="20" y1="12" x2="22" y2="12"></line>
+                <line x1="4.9" y1="19.1" x2="6.3" y2="17.7"></line>
+                <line x1="17.7" y1="6.3" x2="19.1" y2="4.9"></line>
+            </svg>
+        </button>
+
         <div class="toolbar">
             <h1>MD2PDF</h1>
             <div class="controls">
                 <input type="file" id="uploadFile" accept=".md,.txt" class="hidden-file-input" aria-label="Upload markdown file">
-                <button id="uploadBtn">📁 Upload</button>
-                <button id="saveBtn">💾 Save</button>
-                <button id="mathToggle">🧮 Math: HTML</button>
+                <button id="uploadBtn">Upload</button>
+                <button id="saveBtn">Save</button>
+                <button id="mathToggle">Math: HTML</button>
                 <label class="control-label">
-                    📏 Font:
+                    Font:
                     <select id="fontSizeSelect">
                         <option value="10">10px</option>
                         <option value="12" selected>12px</option>
@@ -28,7 +45,7 @@
                     </select>
                 </label>
                 <label class="control-label">
-                    📐 Margin:
+                    Margin:
                     <select id="marginSelect">
                         <option value="15">Narrow (15mm)</option>
                         <option value="20" selected>Medium (20mm)</option>
@@ -38,15 +55,15 @@
                 </label>
             </div>
         </div>
-        
-        <div class="main-container">
+
+        <div id="mainContainer" class="main-container">
             <div class="editor-pane">
                 <h3>Markdown Editor</h3>
                 <textarea id="markdownEditor" placeholder="Enter your markdown here...
 
 # Welcome to MD2PDF
 
-This is a **markdown editor** with live preview.
+This is a markdown editor with live preview.
 
 You can write:
 - Lists
@@ -62,25 +79,38 @@ $$
 
 | Feature | Status |
 |---------|--------|
-| Editing | ✓ |
-| Preview | ✓ |
-| Math    | ✓ |
+| Editing | Yes |
+| Preview | Yes |
+| Math    | Yes |
 "></textarea>
             </div>
-            
+
+            <div id="paneDivider" class="pane-divider" role="separator" aria-label="Resize panes" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
+
             <div class="preview-pane">
                 <h3>A4 Preview</h3>
-                <div id="previewContainer">
-                    <div class="page">
-                        <div class="page-content">
-                            <p>Preview will appear here...</p>
+                <div id="previewViewport" class="preview-viewport">
+                    <div class="preview-controls" aria-label="Preview zoom controls">
+                        <button id="fitWidthBtn" class="preview-ghost-button is-active" title="Fit to width">Fit Width</button>
+                        <button id="fitPageBtn" class="preview-ghost-button" title="Fit whole page">Fit Page</button>
+                        <button id="zoomOutBtn" class="preview-ghost-button" title="Zoom out" aria-label="Zoom out">-</button>
+                        <button id="zoomInBtn" class="preview-ghost-button" title="Zoom in" aria-label="Zoom in">+</button>
+                    </div>
+
+                    <div id="previewCanvasSizer" class="preview-canvas-sizer">
+                        <div id="previewContainer">
+                            <div class="page">
+                                <div class="page-content">
+                                    <p>Preview will appear here...</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
