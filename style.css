@@ -3,6 +3,8 @@
     --split-ratio: 50%;
     --page-font-size: 12px;
     --page-margin: 20mm;
+    --page-width-mm: 210;
+    --page-height-mm: 297;
 
     --app-bg: #10141b;
     --surface-1: #161b25;
@@ -207,7 +209,7 @@ body {
     min-height: 0;
 }
 
-.editor-pane h3 {
+.editor-pane > h3 {
     padding: 0.75rem 1rem;
     background: var(--surface-2);
     border-bottom: 1px solid var(--border-color);
@@ -237,7 +239,7 @@ body {
     min-height: 0;
 }
 
-.preview-pane h3 {
+.preview-pane > h3 {
     padding: 0.75rem 1rem;
     background: var(--surface-2);
     border-bottom: 1px solid var(--border-color);
@@ -249,7 +251,12 @@ body {
     flex: 1;
     position: relative;
     overflow: auto;
+    scrollbar-gutter: stable both-edges;
     padding: 3.2rem 1.5rem 1.5rem;
+}
+
+.preview-viewport.no-horizontal-scroll {
+    overflow-x: hidden;
 }
 
 .preview-controls {
@@ -294,6 +301,17 @@ body {
     cursor: not-allowed;
 }
 
+.preview-zoom-readout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.2rem;
+    padding: 0 0.15rem;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .preview-canvas-sizer {
     min-width: 100%;
     margin: 0 auto;
@@ -312,9 +330,9 @@ body {
 
 /* A4 Page Styles */
 .page {
-    width: 210mm;
-    min-height: 297mm;
-    max-height: 297mm;
+    width: calc(var(--page-width-mm, 210) * 1mm);
+    min-height: calc(var(--page-height-mm, 297) * 1mm);
+    max-height: calc(var(--page-height-mm, 297) * 1mm);
     background: white;
     box-shadow: 0 14px 26px rgba(0, 0, 0, 0.28);
     margin-bottom: 1rem;
@@ -461,5 +479,68 @@ body {
 
     .preview-viewport {
         padding-top: 3.4rem;
+    }
+}
+
+@media print {
+    html[data-export-mode='pdf'] body {
+        background: #fff;
+        overflow: visible;
+        height: auto;
+    }
+
+    html[data-export-mode='pdf'] .theme-toggle,
+    html[data-export-mode='pdf'] .toolbar,
+    html[data-export-mode='pdf'] .pane-divider,
+    html[data-export-mode='pdf'] .editor-pane,
+    html[data-export-mode='pdf'] .preview-pane > h3,
+    html[data-export-mode='pdf'] .preview-controls {
+        display: none !important;
+    }
+
+    html[data-export-mode='pdf'] #app {
+        display: block;
+        height: auto;
+    }
+
+    html[data-export-mode='pdf'] .main-container {
+        display: block;
+    }
+
+    html[data-export-mode='pdf'] .preview-pane {
+        display: block;
+        width: auto;
+        background: #fff;
+    }
+
+    html[data-export-mode='pdf'] .preview-viewport {
+        overflow: visible !important;
+        padding: 0 !important;
+    }
+
+    html[data-export-mode='pdf'] .preview-canvas-sizer {
+        width: auto !important;
+        min-width: 0 !important;
+        height: auto !important;
+        display: block;
+    }
+
+    html[data-export-mode='pdf'] #previewContainer {
+        display: block;
+        transform: none !important;
+        transform-origin: top left;
+        gap: 0;
+    }
+
+    html[data-export-mode='pdf'] .page {
+        margin: 0 !important;
+        box-shadow: none !important;
+        break-after: page;
+        page-break-after: always;
+    }
+
+    html[data-export-mode='pdf'] .page:last-child {
+        break-after: auto;
+        page-break-after: auto;
     }
 }

@@ -2,16 +2,32 @@ import { MathRenderMode } from './katex.js';
 
 type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
 type ThemeMode = 'dark' | 'light';
+type PageSizeKey = 'a4' | 'letter' | 'legal' | 'tabloid' | 'a3';
+
+interface PageSizeSpec {
+  widthMm: number;
+  heightMm: number;
+}
 
 const THEME_STORAGE_KEY = 'md2pdf.theme';
+
+const PAGE_SIZES: Record<PageSizeKey, PageSizeSpec> = {
+  a4: { widthMm: 210, heightMm: 297 },
+  letter: { widthMm: 215.9, heightMm: 279.4 },
+  legal: { widthMm: 215.9, heightMm: 355.6 },
+  tabloid: { widthMm: 279.4, heightMm: 431.8 },
+  a3: { widthMm: 297, heightMm: 420 },
+};
 
 export class UIController {
   private uploadBtn: HTMLButtonElement;
   private saveBtn: HTMLButtonElement;
+  private exportPdfBtn: HTMLButtonElement;
   private mathToggleBtn: HTMLButtonElement;
   private uploadInput: HTMLInputElement;
   private fontSizeSelect: HTMLSelectElement;
   private marginSelect: HTMLSelectElement;
+  private pageSizeSelect: HTMLSelectElement;
 
   private themeToggleBtn: HTMLButtonElement;
   private mainContainer: HTMLElement;
@@ -24,6 +40,7 @@ export class UIController {
   private fitPageBtn: HTMLButtonElement;
   private zoomInBtn: HTMLButtonElement;
   private zoomOutBtn: HTMLButtonElement;
+  private zoomReadout: HTMLElement;
 
   private currentMathMode: MathRenderMode = 'html';
   private currentTheme: ThemeMode = 'dark';
@@ -34,6 +51,7 @@ export class UIController {
   private readonly minZoom = 0.35;
   private readonly maxZoom = 3;
   private readonly zoomStep = 0.1;
+  private readonly previewSideGapPx = 24;
 
   private readonly minSplitPercent = 20;
   private readonly maxSplitPercent = 80;
@@ -43,6 +61,7 @@ export class UIController {
   // Callbacks
   private fileUploadCallback?: (content: string, filename: string) => void;
   private fileSaveCallback?: () => string;
+  private pdfExportCallback?: () => void;
   private mathModeChangeCallback?: (mode: MathRenderMode) => void;
   private settingsChangeCallback?: () => void;
 
@@ -68,10 +87,12 @@ export class UIController {
   constructor() {
     this.uploadBtn = this.requireElement<HTMLButtonElement>('uploadBtn');
     this.saveBtn = this.requireElement<HTMLButtonElement>('saveBtn');
+    this.exportPdfBtn = this.requireElement<HTMLButtonElement>('exportPdfBtn');
     this.mathToggleBtn = this.requireElement<HTMLButtonElement>('mathToggle');
     this.uploadInput = this.requireElement<HTMLInputElement>('uploadFile');
     this.fontSizeSelect = this.requireElement<HTMLSelectElement>('fontSizeSelect');
     this.marginSelect = this.requireElement<HTMLSelectElement>('marginSelect');
+    this.pageSizeSelect = this.requireElement<HTMLSelectElement>('pageSizeSelect');
 
     this.themeToggleBtn = this.requireElement<HTMLButtonElement>('themeToggle');
     this.mainContainer = this.requireElement<HTMLElement>('mainContainer');
@@ -84,6 +105,7 @@ export class UIController {
     this.fitPageBtn = this.requireElement<HTMLButtonElement>('fitPageBtn');
     this.zoomInBtn = this.requireElement<HTMLButtonElement>('zoomInBtn');
     this.zoomOutBtn = this.requireElement<HTMLButtonElement>('zoomOutBtn');
+    this.zoomReadout = this.requireElement<HTMLElement>('zoomReadout');
 
     this.setupEventListeners();
     this.applySettings();
@@ -94,28 +116,35 @@ export class UIController {
   }
 
   /**
-   * Sets the callback for file upload
+   * Sets the callback for file upload.
    */
   onFileUpload(callback: (content: string, filename: string) => void): void {
     this.fileUploadCallback = callback;
   }
 
   /**
-   * Sets the callback for file save
+   * Sets the callback for file save.
    */
   onFileSave(callback: () => string): void {
     this.fileSaveCallback = callback;
   }
 
   /**
-   * Sets the callback for math mode changes
+   * Sets the callback for PDF export.
+   */
+  onPdfExport(callback: () => void): void {
+    this.pdfExportCallback = callback;
+  }
+
+  /**
+   * Sets the callback for math mode changes.
    */
   onMathModeChange(callback: (mode: MathRenderMode) => void): void {
     this.mathModeChangeCallback = callback;
   }
 
   /**
-   * Sets the callback for settings changes (font size, margins)
+   * Sets the callback for settings changes.
    */
   onSettingsChange(callback: () => void): void {
     this.settingsChangeCallback = callback;
@@ -137,17 +166,22 @@ export class UIController {
   }
 
   /**
-   * Gets the current font size in pixels.
+   * Gets the selected page size key.
    */
-  getFontSize(): number {
-    return parseInt(this.fontSizeSelect.value || '12', 10);
+  getPageSize(): PageSizeKey {
+    const key = this.pageSizeSelect.value as PageSizeKey;
+    if (PAGE_SIZES[key]) {
+      return key;
+    }
+
+    return 'a4';
   }
 
   /**
-   * Gets the current margin in millimeters.
+   * Gets current page size dimensions.
    */
-  getMargin(): number {
-    return parseFloat(this.marginSelect.value || '20');
+  getPageSizeSpec(): PageSizeSpec {
+    return PAGE_SIZES[this.getPageSize()];
   }
 
   /**
@@ -229,6 +263,10 @@ export class UIController {
       }
     });
 
+    this.exportPdfBtn.addEventListener('click', () => {
+      this.pdfExportCallback?.();
+    });
+
     this.mathToggleBtn.addEventListener('click', () => {
       this.toggleMathMode();
     });
@@ -240,6 +278,12 @@ export class UIController {
 
     this.marginSelect.addEventListener('change', () => {
       this.applySettings();
+      this.settingsChangeCallback?.();
+    });
+
+    this.pageSizeSelect.addEventListener('change', () => {
+      this.applySettings();
+      this.zoomMode = 'fit-width';
       this.settingsChangeCallback?.();
     });
 
@@ -266,8 +310,34 @@ export class UIController {
     this.zoomOutBtn.addEventListener('click', () => {
       this.zoomMode = 'manual';
       this.zoomLevel = this.roundZoom(this.zoomLevel - this.zoomStep);
+
+      const fitWidthZoom = this.calculateFitWidthZoom();
+      if (this.zoomLevel <= fitWidthZoom + 0.01) {
+        this.zoomMode = 'fit-width';
+      }
+
       this.applyPreviewZoom();
     });
+
+    this.previewViewport.addEventListener('wheel', (event) => {
+      if (!event.ctrlKey) {
+        return;
+      }
+
+      event.preventDefault();
+      const magnitude = Math.max(Math.abs(event.deltaY) * 0.0012, this.zoomStep / 2);
+      const direction = event.deltaY < 0 ? 1 : -1;
+
+      this.zoomMode = 'manual';
+      this.zoomLevel = this.roundZoom(this.zoomLevel + (direction * magnitude));
+
+      const fitWidthZoom = this.calculateFitWidthZoom();
+      if (this.zoomLevel <= fitWidthZoom + 0.01) {
+        this.zoomMode = 'fit-width';
+      }
+
+      this.applyPreviewZoom();
+    }, { passive: false });
 
     this.paneDivider.addEventListener('pointerdown', (event) => {
       this.startDividerDrag(event);
@@ -288,8 +358,20 @@ export class UIController {
 
   private applySettings(): void {
     const root = document.documentElement;
+    const pageSize = this.getPageSizeSpec();
+
     root.style.setProperty('--page-font-size', `${this.getFontSize()}px`);
     root.style.setProperty('--page-margin', `${this.getMargin()}mm`);
+    root.style.setProperty('--page-width-mm', `${pageSize.widthMm}`);
+    root.style.setProperty('--page-height-mm', `${pageSize.heightMm}`);
+  }
+
+  private getFontSize(): number {
+    return parseInt(this.fontSizeSelect.value || '12', 10);
+  }
+
+  private getMargin(): number {
+    return parseFloat(this.marginSelect.value || '20');
   }
 
   private initializeTheme(): void {
@@ -326,20 +408,36 @@ export class UIController {
     this.applyTheme(nextTheme);
   }
 
+  private getViewportPaddingPx(): { left: number; right: number; top: number; bottom: number } {
+    const styles = getComputedStyle(this.previewViewport);
+    return {
+      left: parseFloat(styles.paddingLeft) || 0,
+      right: parseFloat(styles.paddingRight) || 0,
+      top: parseFloat(styles.paddingTop) || 0,
+      bottom: parseFloat(styles.paddingBottom) || 0,
+    };
+  }
+
+  private getViewportInnerSizePx(): { width: number; height: number } {
+    const padding = this.getViewportPaddingPx();
+    return {
+      width: Math.max(this.previewViewport.clientWidth - padding.left - padding.right, 120),
+      height: Math.max(this.previewViewport.clientHeight - padding.top - padding.bottom, 120),
+    };
+  }
+
   private calculateFitWidthZoom(): number {
     const pageSize = this.getBasePageSizePx();
-    const horizontalPaddingPx = 56;
-    const availableWidth = Math.max(this.previewViewport.clientWidth - horizontalPaddingPx, 180);
+    const viewport = this.getViewportInnerSizePx();
+    const availableWidth = Math.max(viewport.width - (this.previewSideGapPx * 2), 180);
     return this.clamp(availableWidth / pageSize.width, this.minZoom, this.maxZoom);
   }
 
   private calculateFitPageZoom(): number {
     const pageSize = this.getBasePageSizePx();
-    const horizontalPaddingPx = 56;
-    const verticalPaddingPx = 56;
-
-    const availableWidth = Math.max(this.previewViewport.clientWidth - horizontalPaddingPx, 180);
-    const availableHeight = Math.max(this.previewViewport.clientHeight - verticalPaddingPx, 180);
+    const viewport = this.getViewportInnerSizePx();
+    const availableWidth = Math.max(viewport.width - (this.previewSideGapPx * 2), 180);
+    const availableHeight = Math.max(viewport.height - 8, 180);
 
     const widthZoom = availableWidth / pageSize.width;
     const heightZoom = availableHeight / pageSize.height;
@@ -350,32 +448,52 @@ export class UIController {
   private applyPreviewZoom(): void {
     this.zoomLevel = this.clamp(this.zoomLevel, this.minZoom, this.maxZoom);
 
+    if (this.zoomMode === 'fit-width') {
+      this.zoomLevel = this.calculateFitWidthZoom();
+    } else if (this.zoomMode === 'fit-page') {
+      this.zoomLevel = this.calculateFitPageZoom();
+    }
+
     this.previewContainer.style.transform = `scale(${this.zoomLevel})`;
 
     const baseCanvas = this.getBaseCanvasSizePx();
     const scaledWidth = Math.ceil(baseCanvas.width * this.zoomLevel);
     const scaledHeight = Math.ceil(baseCanvas.height * this.zoomLevel);
+    const viewport = this.getViewportInnerSizePx();
 
-    const minWidth = Math.max(this.previewViewport.clientWidth - 12, 240);
-    const minHeight = Math.max(this.previewViewport.clientHeight - 12, 320);
+    const fitWidthZoom = this.calculateFitWidthZoom();
+    const hideHorizontalOverflow = this.zoomMode !== 'manual' || this.zoomLevel <= fitWidthZoom + 0.001;
 
-    this.previewCanvasSizer.style.width = `${Math.max(scaledWidth, minWidth)}px`;
-    this.previewCanvasSizer.style.height = `${Math.max(scaledHeight, minHeight)}px`;
+    if (hideHorizontalOverflow) {
+      this.previewViewport.classList.add('no-horizontal-scroll');
+      this.previewCanvasSizer.style.width = `${Math.max(viewport.width, 260)}px`;
+      this.previewViewport.scrollLeft = 0;
+    } else {
+      this.previewViewport.classList.remove('no-horizontal-scroll');
+      const minWidth = Math.max(viewport.width, 260);
+      const desiredWidth = scaledWidth + (this.previewSideGapPx * 2);
+      this.previewCanvasSizer.style.width = `${Math.max(desiredWidth, minWidth)}px`;
+    }
+
+    const minHeight = Math.max(viewport.height, 320);
+    this.previewCanvasSizer.style.height = `${Math.max(scaledHeight + 8, minHeight)}px`;
 
     this.updatePreviewControlState();
   }
 
   private getBasePageSizePx(): { width: number; height: number } {
     const page = this.previewContainer.querySelector('.page') as HTMLElement | null;
+    const selectedPage = this.getPageSizeSpec();
+
     if (!page) {
       return {
-        width: this.mmToPx(210),
-        height: this.mmToPx(297),
+        width: this.mmToPx(selectedPage.widthMm),
+        height: this.mmToPx(selectedPage.heightMm),
       };
     }
 
-    const width = page.offsetWidth || this.mmToPx(210);
-    const height = page.offsetHeight || this.mmToPx(297);
+    const width = page.offsetWidth || this.mmToPx(selectedPage.widthMm);
+    const height = page.offsetHeight || this.mmToPx(selectedPage.heightMm);
 
     return {
       width,
@@ -403,6 +521,7 @@ export class UIController {
     this.zoomOutBtn.disabled = this.zoomLevel <= this.minZoom;
 
     const zoomPercent = Math.round(this.zoomLevel * 100);
+    this.zoomReadout.textContent = `${zoomPercent}%`;
     this.zoomInBtn.setAttribute('title', `Zoom in (${zoomPercent}%)`);
     this.zoomOutBtn.setAttribute('title', `Zoom out (${zoomPercent}%)`);
   }

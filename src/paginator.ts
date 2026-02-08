@@ -17,7 +17,7 @@ interface SplitResult {
   tail: HTMLElement;
 }
 
-const A4_WIDTH_MM = 210;
+const DEFAULT_PAGE_WIDTH_MM = 210;
 const DEFAULT_FONT_SIZE_PX = 12;
 const DEFAULT_MARGIN_MM = 20;
 const FIT_EPSILON_PX = 0.5;
@@ -462,9 +462,10 @@ function createPageContent(blocks: HTMLElement[] = []): HTMLElement {
 function createMeasureContainer(): HTMLElement {
   const root = document.documentElement;
   const computed = getComputedStyle(root);
+  const pageWidthMm = getCssNumericValue(computed.getPropertyValue('--page-width-mm'), DEFAULT_PAGE_WIDTH_MM);
   const fontSize = getCssNumericValue(computed.getPropertyValue('--page-font-size'), DEFAULT_FONT_SIZE_PX);
   const marginMm = getCssNumericValue(computed.getPropertyValue('--page-margin'), DEFAULT_MARGIN_MM);
-  const contentWidthMm = Math.max(A4_WIDTH_MM - (marginMm * 2), 60);
+  const contentWidthMm = Math.max(pageWidthMm - (marginMm * 2), 60);
 
   const container = document.createElement('div');
   container.className = 'page-content';

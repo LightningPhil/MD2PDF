@@ -14,6 +14,7 @@ class MD2PDFApp {
   private editor!: MarkdownEditor;
   private pageManager!: PageManager;
   private ui!: UIController;
+  private isExportingPdf = false;
   
   constructor() {
     try {
@@ -50,6 +51,11 @@ class MD2PDFApp {
     // File save -> get content from editor
     this.ui.onFileSave(() => {
       return this.editor.getContent();
+    });
+
+    // PDF export
+    this.ui.onPdfExport(() => {
+      this.exportCurrentPreviewToPdf();
     });
     
     // Math mode change -> update pages
@@ -99,6 +105,59 @@ class MD2PDFApp {
    */
   private showError(message: string): void {
     this.ui.showNotification(message, 'error');
+  }
+
+  private exportCurrentPreviewToPdf(): void {
+    if (this.isExportingPdf) {
+      return;
+    }
+
+    this.isExportingPdf = true;
+
+    const root = document.documentElement;
+    const previousMathMode = this.pageManager.getMathMode();
+
+    if (previousMathMode !== 'html') {
+      this.pageManager.setMathMode('html');
+      this.ui.setMathMode('html');
+      this.updatePreview();
+    }
+
+    this.ui.showNotification('Opening print dialog for PDF export...', 'info');
+    root.dataset.exportMode = 'pdf';
+
+    let cleanedUp = false;
+    const cleanup = (): void => {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+
+      delete root.dataset.exportMode;
+
+      if (previousMathMode !== 'html') {
+        this.pageManager.setMathMode(previousMathMode);
+        this.ui.setMathMode(previousMathMode);
+        this.updatePreview();
+      }
+
+      window.removeEventListener('afterprint', onAfterPrint);
+      this.isExportingPdf = false;
+    };
+
+    const onAfterPrint = (): void => {
+      cleanup();
+    };
+
+    window.addEventListener('afterprint', onAfterPrint);
+
+    try {
+      window.print();
+    } finally {
+      window.setTimeout(() => {
+        cleanup();
+      }, 1200);
+    }
   }
 }
 

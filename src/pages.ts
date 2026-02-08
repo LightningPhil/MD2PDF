@@ -1,7 +1,7 @@
 import { paginate } from './paginator.js';
 import { renderMath, MathRenderMode } from './katex.js';
 
-const A4_HEIGHT_MM = 297;
+const DEFAULT_PAGE_HEIGHT_MM = 297;
 const DEFAULT_MARGIN_MM = 20;
 const FALLBACK_PX_PER_MM = 96 / 25.4;
 
@@ -116,9 +116,17 @@ export class PageManager {
    * Calculates usable content height for an A4 page based on current margin.
    */
   private getPageContentHeightPx(): number {
+    const pageHeightMm = this.getPageHeightMm();
     const marginMm = this.getPageMarginMm();
-    const contentHeightMm = Math.max(A4_HEIGHT_MM - (marginMm * 2), 40);
+    const contentHeightMm = Math.max(pageHeightMm - (marginMm * 2), 40);
     return this.mmToPx(contentHeightMm);
+  }
+
+  private getPageHeightMm(): number {
+    const rootStyles = getComputedStyle(document.documentElement);
+    const pageHeightValue = rootStyles.getPropertyValue('--page-height-mm').trim();
+    const pageHeightMm = parseFloat(pageHeightValue);
+    return Number.isFinite(pageHeightMm) ? pageHeightMm : DEFAULT_PAGE_HEIGHT_MM;
   }
 
   private getPageMarginMm(): number {

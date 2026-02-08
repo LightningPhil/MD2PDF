@@ -32,6 +32,7 @@
                 <input type="file" id="uploadFile" accept=".md,.txt" class="hidden-file-input" aria-label="Upload markdown file">
                 <button id="uploadBtn">Upload</button>
                 <button id="saveBtn">Save</button>
+                <button id="exportPdfBtn">Export PDF</button>
                 <button id="mathToggle">Math: HTML</button>
                 <label class="control-label">
                     Font:
@@ -51,6 +52,16 @@
                         <option value="20" selected>Medium (20mm)</option>
                         <option value="25.4">Wide (1 inch)</option>
                         <option value="30">Extra Wide (30mm)</option>
+                    </select>
+                </label>
+                <label class="control-label">
+                    Page:
+                    <select id="pageSizeSelect">
+                        <option value="a4" selected>A4 (210 x 297mm)</option>
+                        <option value="letter">Letter (8.5 x 11in)</option>
+                        <option value="legal">Legal (8.5 x 14in)</option>
+                        <option value="tabloid">Tabloid (11 x 17in)</option>
+                        <option value="a3">A3 (297 x 420mm)</option>
                     </select>
                 </label>
             </div>
@@ -88,11 +99,12 @@ $$
             <div id="paneDivider" class="pane-divider" role="separator" aria-label="Resize panes" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
 
             <div class="preview-pane">
-                <h3>A4 Preview</h3>
+                <h3>Page Preview</h3>
                 <div id="previewViewport" class="preview-viewport">
                     <div class="preview-controls" aria-label="Preview zoom controls">
                         <button id="fitWidthBtn" class="preview-ghost-button is-active" title="Fit to width">Fit Width</button>
                         <button id="fitPageBtn" class="preview-ghost-button" title="Fit whole page">Fit Page</button>
+                        <span id="zoomReadout" class="preview-zoom-readout" aria-live="polite">100%</span>
                         <button id="zoomOutBtn" class="preview-ghost-button" title="Zoom out" aria-label="Zoom out">-</button>
                         <button id="zoomInBtn" class="preview-ghost-button" title="Zoom in" aria-label="Zoom in">+</button>
                     </div>
