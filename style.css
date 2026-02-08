@@ -1,6 +1,8 @@
 /* Global variables */
 :root {
     --split-ratio: 50%;
+    --sidebar-width: 290px;
+    --sidebar-collapsed-width: 50px;
     --page-font-size: 12px;
     --page-margin: 20mm;
     --page-width-mm: 210;
@@ -55,6 +57,126 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+}
+
+.workspace-shell {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    overflow: hidden;
+}
+
+.workspace-shell.sidebar-collapsed {
+    grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
+}
+
+.document-sidebar {
+    background: var(--surface-1);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.document-sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.65rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-2);
+}
+
+.document-sidebar-title {
+    font-size: 0.84rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.sidebar-toggle-btn {
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-3);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.98rem;
+    line-height: 1;
+}
+
+.sidebar-toggle-btn:hover {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+}
+
+.document-list {
+    flex: 1;
+    overflow: auto;
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.document-item {
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.55rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.document-item:hover {
+    background: var(--surface-2);
+    border-color: var(--border-color);
+}
+
+.document-item.is-active {
+    background: color-mix(in srgb, var(--accent) 20%, var(--surface-2));
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border-color));
+}
+
+.document-item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.84rem;
+}
+
+.document-item-pages {
+    min-width: 2.5ch;
+    text-align: right;
+    color: var(--text-secondary);
+    font-size: 0.79rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.document-list-empty {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    padding: 0.55rem;
+}
+
+.workspace-shell.sidebar-collapsed .document-sidebar-title,
+.workspace-shell.sidebar-collapsed .document-list {
+    display: none;
+}
+
+.workspace-shell.sidebar-collapsed .document-sidebar-header {
+    justify-content: center;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
 }
 
 .theme-toggle {
@@ -166,7 +288,7 @@ body {
 
 /* Main Container */
 .main-container {
-    flex: 1;
+    height: 100%;
     display: grid;
     grid-template-columns: clamp(20%, var(--split-ratio), 80%) 10px minmax(0, 1fr);
     overflow: hidden;
@@ -463,6 +585,15 @@ body {
         right: 0.8rem;
     }
 
+    .workspace-shell,
+    .workspace-shell.sidebar-collapsed {
+        grid-template-columns: 1fr;
+    }
+
+    .document-sidebar {
+        display: none;
+    }
+
     .main-container {
         grid-template-columns: 1fr;
         grid-template-rows: minmax(220px, 1fr) minmax(220px, 1fr);
@@ -491,6 +622,7 @@ body {
 
     html[data-export-mode='pdf'] .theme-toggle,
     html[data-export-mode='pdf'] .toolbar,
+    html[data-export-mode='pdf'] .document-sidebar,
     html[data-export-mode='pdf'] .pane-divider,
     html[data-export-mode='pdf'] .editor-pane,
     html[data-export-mode='pdf'] .preview-pane > h3,
@@ -501,6 +633,10 @@ body {
     html[data-export-mode='pdf'] #app {
         display: block;
         height: auto;
+    }
+
+    html[data-export-mode='pdf'] .workspace-shell {
+        display: block;
     }
 
     html[data-export-mode='pdf'] .main-container {

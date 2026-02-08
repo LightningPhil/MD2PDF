@@ -26,15 +26,8 @@ export class PageManager {
     // Clear existing pages
     this.clearPages();
 
-    // Calculate available content height from current margin settings.
-    const pageHeightPx = this.getPageContentHeightPx();
-
-    // Render math before pagination so block heights are measured correctly.
-    const paginableContent = content.cloneNode(true) as HTMLElement;
-    renderMath(paginableContent, this.mathMode);
-
     // Create pages using the paginator
-    this.pages = paginate(paginableContent, pageHeightPx);
+    this.pages = this.paginateContent(content);
     
     // Add pages to container
     this.displayPages();
@@ -60,6 +53,14 @@ export class PageManager {
    */
   getPageCount(): number {
     return this.pages.length;
+  }
+
+  /**
+   * Calculates page count without mutating current preview state.
+   */
+  calculatePageCount(content: HTMLElement): number {
+    const paginated = this.paginateContent(content);
+    return Math.max(1, paginated.length);
   }
   
   /**
@@ -110,6 +111,20 @@ export class PageManager {
       `;
       this.container.appendChild(placeholder);
     }
+  }
+
+  /**
+   * Paginates content using current page settings and math mode.
+   */
+  private paginateContent(content: HTMLElement): HTMLElement[] {
+    // Calculate available content height from current margin settings.
+    const pageHeightPx = this.getPageContentHeightPx();
+
+    // Render math before pagination so block heights are measured correctly.
+    const paginableContent = content.cloneNode(true) as HTMLElement;
+    renderMath(paginableContent, this.mathMode);
+
+    return paginate(paginableContent, pageHeightPx);
   }
 
   /**

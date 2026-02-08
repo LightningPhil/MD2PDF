@@ -1,16 +1,12 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import process from 'node:process';
-
-const PAGE_SIZES = {
-  a4: { widthMm: 210, heightMm: 297 },
-  letter: { widthMm: 215.9, heightMm: 279.4 },
-  legal: { widthMm: 215.9, heightMm: 355.6 },
-  tabloid: { widthMm: 279.4, heightMm: 431.8 },
-  a3: { widthMm: 297, heightMm: 420 },
-};
+import {
+  createPdfExportSession,
+  normalizePageSizeKey,
+  resolveOutputPath,
+} from './pdf-export-core.mjs';
 
 function printUsage() {
   console.log(`
@@ -72,34 +68,6 @@ function parseArgs(argv) {
   return { parsed, positionals };
 }
 
-async function ensureDirForFile(filePath) {
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
-}
-
-function resolveOutputPath(inputPath, outputPath) {
-  if (outputPath) {
-    return path.resolve(outputPath);
-  }
-
-  const inputAbsolute = path.resolve(inputPath);
-  const inputDir = path.dirname(inputAbsolute);
-  const inputName = path.basename(inputAbsolute, path.extname(inputAbsolute));
-  return path.join(inputDir, `${inputName}.pdf`);
-}
-
-function closePreviewServer(previewServer) {
-  return new Promise((resolve, reject) => {
-    previewServer.httpServer.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
-}
-
 async function main() {
   const { parsed, positionals } = parseArgs(process.argv.slice(2));
 
@@ -124,125 +92,26 @@ async function main() {
     process.exit(1);
   }
 
-  const inputPath = path.resolve(args.input);
+  const inputPath = args.input;
   const outputPath = resolveOutputPath(inputPath, args.output);
-  const pageSizeKey = String(args['page-size'] || 'a4').toLowerCase();
-  const pageSize = PAGE_SIZES[pageSizeKey];
-
-  if (!pageSize) {
-    console.error(`Unsupported page size '${pageSizeKey}'. Allowed: ${Object.keys(PAGE_SIZES).join(', ')}`);
-    process.exit(1);
-  }
+  const pageSizeKey = normalizePageSizeKey(args['page-size'] || 'a4');
 
   const markdown = await fs.readFile(inputPath, 'utf8');
 
-  let buildFn;
-  let previewFn;
-  let chromium;
+  const session = await createPdfExportSession({ build: true });
 
   try {
-    const viteModule = await import('vite');
-    buildFn = viteModule.build;
-    previewFn = viteModule.preview;
-  } catch (error) {
-    console.error('Vite is required for PDF export. Run npm install and retry.');
-    throw error;
-  }
-
-  try {
-    const playwrightModule = await import('playwright');
-    chromium = playwrightModule.chromium;
-  } catch (error) {
-    console.error('Playwright is required for PDF export. Run npm install and then npx playwright install chromium.');
-    throw error;
-  }
-
-  console.log('Building app for export...');
-  await buildFn({ logLevel: 'error' });
-
-  console.log('Starting preview server...');
-  const previewServer = await previewFn({
-    logLevel: 'error',
-    preview: {
-      host: '127.0.0.1',
-      port: 4173,
-      strictPort: false,
-    },
-  });
-
-  const previewUrl = previewServer.resolvedUrls?.local?.[0] ?? 'http://127.0.0.1:4173/';
-
-  let browser;
-  try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({
-      viewport: { width: 1600, height: 1200 },
-    });
-
-    await page.goto(previewUrl, { waitUntil: 'networkidle' });
-    await page.waitForSelector('#markdownEditor');
-
-    await page.evaluate(({ markdownText, selectedPageSize }) => {
-      const textarea = document.getElementById('markdownEditor');
-      if (textarea instanceof HTMLTextAreaElement) {
-        textarea.value = markdownText;
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-
-      const pageSizeSelect = document.getElementById('pageSizeSelect');
-      if (pageSizeSelect instanceof HTMLSelectElement) {
-        pageSizeSelect.value = selectedPageSize;
-        pageSizeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-
-      const mathToggle = document.getElementById('mathToggle');
-      if (mathToggle instanceof HTMLButtonElement && mathToggle.textContent?.includes('SVG')) {
-        mathToggle.click();
-      }
-
-      document.documentElement.dataset.exportMode = 'pdf';
-    }, {
+    const exportResult = await session.exportMarkdownToPdf({
       markdownText: markdown,
-      selectedPageSize: pageSizeKey,
+      outputPath,
+      pageSizeKey,
     });
 
-    // Wait for rendering and pagination to settle.
-    await page.waitForTimeout(350);
-    await page.emulateMedia({ media: 'print' });
-
-    await page.addStyleTag({
-      content: `
-        @page {
-          size: ${pageSize.widthMm}mm ${pageSize.heightMm}mm;
-          margin: 0;
-        }
-      `,
-    });
-
-    await ensureDirForFile(outputPath);
-
-    await page.pdf({
-      path: outputPath,
-      width: `${pageSize.widthMm}mm`,
-      height: `${pageSize.heightMm}mm`,
-      margin: {
-        top: '0mm',
-        right: '0mm',
-        bottom: '0mm',
-        left: '0mm',
-      },
-      printBackground: true,
-      preferCSSPageSize: true,
-    });
-
-    console.log(`PDF exported: ${outputPath}`);
-    console.log(`Page size: ${pageSizeKey.toUpperCase()} (${pageSize.widthMm}mm x ${pageSize.heightMm}mm)`);
+    console.log(`PDF exported: ${exportResult.outputPath}`);
+    console.log(`Page size: ${pageSizeKey.toUpperCase()} (${exportResult.pageSize.widthMm}mm x ${exportResult.pageSize.heightMm}mm)`);
     console.log('Math mode forced to KaTeX HTML for export.');
   } finally {
-    if (browser) {
-      await browser.close();
-    }
-    await closePreviewServer(previewServer);
+    await session.close();
   }
 }
 

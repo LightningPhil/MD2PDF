@@ -4,6 +4,7 @@ A web app that loads/edits Markdown and renders it live as paginated paper-style
 
 ## Features
 
+- Collapsible left file panel with open markdown files and per-file page counts
 - Split-pane interface: editor on the left, paginated preview on the right
 - Live preview while typing
 - KaTeX math rendering with HTML/SVG toggle
@@ -11,10 +12,12 @@ A web app that loads/edits Markdown and renders it live as paginated paper-style
 - Page sizes: A4, Letter, Legal, Tabloid, A3
 - Preview controls: fit width, fit page, zoom in/out, zoom percentage
 - Theme toggle for app chrome (rendered page stays white)
-- File upload/save and drag-and-drop for `.md`
+- Multi-file upload/save and drag-and-drop for `.md`
 - PDF export:
-  - In-app `Export PDF` button (browser print to PDF)
-  - CLI export via Playwright/Chromium
+  - In-app `Export PDF` button (headless API export, no print dialog)
+  - In-app `Export All PDF` button (headless API export to ZIP, no print dialog)
+  - Headless CLI export via Playwright/Chromium (no dialog)
+  - Batch headless export with optional ZIP packaging
 
 ## Getting Started
 
@@ -55,6 +58,8 @@ PDF export (CLI):
   - `npm run export:pdf -- --input samples/sample.md --output dist/exports/sample.pdf --page-size a4`
 - Positional style:
   - `npm run export:pdf -- samples/sample.md dist/exports/sample.pdf a4`
+- Batch + ZIP:
+  - `npm run export:pdf:batch -- --input-dir samples --recursive --out-dir dist/exports/run1 --zip dist/exports/run1.zip --page-size a4`
 
 ## Usage
 
@@ -62,10 +67,12 @@ PDF export (CLI):
 2. Use math syntax:
    - Inline: `$...$`
    - Display: `$$...$$`
-3. Use `Upload` to load `.md` files.
-4. Use `Save` to download Markdown.
-5. Use `Export PDF` to open print dialog and save as PDF.
-6. Use `Math` toggle to switch HTML/SVG render mode.
+3. Use `Upload` to load one or many `.md` files.
+4. Select files from the collapsible left panel.
+5. Use `Save` to download the currently selected Markdown file.
+6. Use `Export PDF` to download the currently selected file as PDF.
+7. Use `Export All PDF` to download all open files as one ZIP of PDFs.
+8. Use `Math` toggle to switch HTML/SVG render mode.
 
 ## Supported Markdown
 
@@ -93,7 +100,7 @@ PDF export (CLI):
 
 ## Scope Notes
 
-Current implementation is still progressing through Phase 2. The PDF path now exists (in-app print and CLI), while advanced packaging details like embedded font workflows are still future work.
+Current implementation is still progressing through Phase 2. The headless PDF path now exists in-app and via CLI, while advanced packaging details like embedded font workflows are still future work.
 
 ## Author
 
