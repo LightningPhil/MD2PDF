@@ -92,3 +92,14 @@ Produces a **single offline HTML** artifact (default `dist/singlefile/index.html
 
 - `/project-create-remote`
   - Creates/configures the GitHub repo remote (only if you use `gh` CLI and are authenticated).
+
+### `/project-todonow-prd`
+Creates **todonowPRD.md** — a Claude-authored, ultra-detailed PRD describing exactly what to implement next in order to fully satisfy ProjectPlan.md.
+
+**Use when:**
+- The repo is mid-flight
+- Gaps exist vs ProjectPlan.md
+- You want Claude to generate the next authoritative execution contract
+
+**Position in flow:**
+After `/project-plan-codex` or `/project-audit-implementation`.

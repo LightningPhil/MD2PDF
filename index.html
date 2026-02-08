@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MD2PDF - Markdown to Paginated Preview</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div class="toolbar">
+            <h1>MD2PDF</h1>
+            <div class="controls">
+                <input type="file" id="uploadFile" accept=".md,.txt" class="hidden-file-input" aria-label="Upload markdown file">
+                <button id="uploadBtn">📁 Upload</button>
+                <button id="saveBtn">💾 Save</button>
+                <button id="mathToggle">🧮 Math: HTML</button>
+                <label class="control-label">
+                    📏 Font:
+                    <select id="fontSizeSelect">
+                        <option value="10">10px</option>
+                        <option value="12" selected>12px</option>
+                        <option value="14">14px</option>
+                        <option value="16">16px</option>
+                        <option value="18">18px</option>
+                        <option value="20">20px</option>
+                    </select>
+                </label>
+                <label class="control-label">
+                    📐 Margin:
+                    <select id="marginSelect">
+                        <option value="15">Narrow (15mm)</option>
+                        <option value="20" selected>Medium (20mm)</option>
+                        <option value="25.4">Wide (1 inch)</option>
+                        <option value="30">Extra Wide (30mm)</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+        
+        <div class="main-container">
+            <div class="editor-pane">
+                <h3>Markdown Editor</h3>
+                <textarea id="markdownEditor" placeholder="Enter your markdown here...
+
+# Welcome to MD2PDF
+
+This is a **markdown editor** with live preview.
+
+You can write:
+- Lists
+- *Italic* and **bold** text
+- Inline math: $E = mc^2$
+- Display math:
+
+$$
+\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}
+$$
+
+## Tables
+
+| Feature | Status |
+|---------|--------|
+| Editing | ✓ |
+| Preview | ✓ |
+| Math    | ✓ |
+"></textarea>
+            </div>
+            
+            <div class="preview-pane">
+                <h3>A4 Preview</h3>
+                <div id="previewContainer">
+                    <div class="page">
+                        <div class="page-content">
+                            <p>Preview will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

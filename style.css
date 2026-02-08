@@ -1,0 +1,298 @@
+/* Global Styles */
+:root {
+    --page-font-size: 12px;
+    --page-margin: 20mm;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f5f5;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* Toolbar */
+.toolbar {
+    background: white;
+    border-bottom: 1px solid #ddd;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.toolbar h1 {
+    font-size: 1.5rem;
+    color: #333;
+}
+
+.controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.controls button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+}
+
+.controls button:hover {
+    background: #f0f0f0;
+}
+
+.controls button:active {
+    background: #e0e0e0;
+}
+
+.control-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.control-label select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+/* Main Container */
+.main-container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+/* Editor Pane */
+.editor-pane {
+    width: 50%;
+    background: white;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-pane h3 {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    font-size: 1rem;
+    color: #666;
+}
+
+#markdownEditor {
+    flex: 1;
+    border: none;
+    padding: 1rem;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+    background: #fefefe;
+}
+
+/* Preview Pane */
+.preview-pane {
+    width: 50%;
+    background: #e9ecef;
+    display: flex;
+    flex-direction: column;
+}
+
+.preview-pane h3 {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    font-size: 1rem;
+    color: #666;
+}
+
+#previewContainer {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* A4 Page Styles */
+.page {
+    width: 210mm;
+    min-height: 297mm;
+    max-height: 297mm;
+    background: white;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    margin-bottom: 1rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.page-content {
+    padding: var(--page-margin, 20mm);
+    height: 100%;
+    overflow: hidden;
+    font-size: var(--page-font-size, 12px);
+}
+
+/* Content Styles */
+.page-content h1, .page-content h2, .page-content h3, 
+.page-content h4, .page-content h5, .page-content h6 {
+    font-family: Georgia, 'Times New Roman', serif;
+    margin-bottom: 0.5em;
+    color: #333;
+    page-break-after: avoid;
+}
+
+.page-content h1 { font-size: 2em; }
+.page-content h2 { font-size: 1.7em; }
+.page-content h3 { font-size: 1.4em; }
+.page-content h4 { font-size: 1.2em; }
+.page-content h5 { font-size: 1.1em; }
+.page-content h6 { font-size: 1em; }
+
+.page-content p {
+    font-family: Georgia, 'Times New Roman', serif;
+    line-height: 1.6;
+    margin-bottom: 1em;
+    text-align: justify;
+}
+
+.page-content ul, .page-content ol {
+    margin-bottom: 1em;
+    padding-left: 2em;
+}
+
+.page-content li {
+    margin-bottom: 0.3em;
+    line-height: 1.6;
+}
+
+.page-content code {
+    background: #f8f9fa;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.page-content pre {
+    background: #f8f9fa;
+    padding: 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin-bottom: 1em;
+    border-left: 4px solid #007acc;
+}
+
+.page-content pre code {
+    background: none;
+    padding: 0;
+}
+
+.page-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+    page-break-inside: avoid;
+}
+
+.page-content th, .page-content td {
+    border: 1px solid #ddd;
+    padding: 0.5em;
+    text-align: left;
+}
+
+.page-content th {
+    background: #f8f9fa;
+    font-weight: bold;
+}
+
+.page-content blockquote {
+    border-left: 4px solid #007acc;
+    padding-left: 1em;
+    margin: 1em 0;
+    font-style: italic;
+    color: #666;
+}
+
+.page-content hr {
+    border: none;
+    height: 1px;
+    background: #ddd;
+    margin: 2em 0;
+}
+
+/* Math Styles */
+.katex-display {
+    page-break-inside: avoid;
+    margin: 1em 0;
+}
+
+/* Hidden file input */
+.hidden-file-input {
+    display: none;
+}
+
+.katex {
+    font-size: 1em;
+}
+
+/* Responsive Design */
+@media (max-width: 1400px) {
+    .page {
+        width: 190mm;
+        min-height: 269mm;
+        max-height: 269mm;
+    }
+    
+    .page-content {
+        padding: 20mm;
+    }
+}
+
+@media (max-width: 1200px) {
+    .main-container {
+        flex-direction: column;
+    }
+    
+    .editor-pane, .preview-pane {
+        width: 100%;
+        height: 50%;
+    }
+    
+    .page {
+        width: 160mm;
+        min-height: 226mm;
+        max-height: 226mm;
+    }
+    
+    .page-content {
+        padding: 15mm;
+    }
+}
