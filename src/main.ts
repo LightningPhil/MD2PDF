@@ -15,6 +15,7 @@ class MD2PDFApp {
   private pageManager!: PageManager;
   private ui!: UIController;
   private isExportingPdf = false;
+  private exportPrintStyleElement: HTMLStyleElement | null = null;
   
   constructor() {
     try {
@@ -125,6 +126,7 @@ class MD2PDFApp {
 
     this.ui.showNotification('Opening print dialog for PDF export...', 'info');
     root.dataset.exportMode = 'pdf';
+    this.injectExportPrintStyle();
 
     let cleanedUp = false;
     const cleanup = (): void => {
@@ -134,6 +136,10 @@ class MD2PDFApp {
       cleanedUp = true;
 
       delete root.dataset.exportMode;
+      if (this.exportPrintStyleElement) {
+        this.exportPrintStyleElement.remove();
+        this.exportPrintStyleElement = null;
+      }
 
       if (previousMathMode !== 'html') {
         this.pageManager.setMathMode(previousMathMode);
@@ -151,13 +157,43 @@ class MD2PDFApp {
 
     window.addEventListener('afterprint', onAfterPrint);
 
-    try {
-      window.print();
-    } finally {
-      window.setTimeout(() => {
-        cleanup();
-      }, 1200);
+    // Let CSS + re-render settle before opening print preview.
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        try {
+          window.print();
+        } finally {
+          window.setTimeout(() => {
+            cleanup();
+          }, 1600);
+        }
+      });
+    });
+  }
+
+  private injectExportPrintStyle(): void {
+    if (this.exportPrintStyleElement) {
+      this.exportPrintStyleElement.remove();
+      this.exportPrintStyleElement = null;
     }
+
+    const pageSize = this.ui.getPageSizeSpec();
+    const style = document.createElement('style');
+    style.setAttribute('data-export-print-style', 'true');
+    style.textContent = `
+      @page {
+        size: ${pageSize.widthMm}mm ${pageSize.heightMm}mm;
+        margin: 0;
+      }
+      @media print {
+        html[data-export-mode='pdf'] body {
+          margin: 0 !important;
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+    this.exportPrintStyleElement = style;
   }
 }
 

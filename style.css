@@ -536,11 +536,11 @@ body {
         margin: 0 !important;
         box-shadow: none !important;
         break-after: page;
-        page-break-after: always;
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     html[data-export-mode='pdf'] .page:last-child {
         break-after: auto;
-        page-break-after: auto;
     }
 }
