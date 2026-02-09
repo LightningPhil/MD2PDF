@@ -24,6 +24,7 @@
                 <line x1="17.7" y1="6.3" x2="19.1" y2="4.9"></line>
             </svg>
         </button>
+        <button id="helpToggleBtn" class="help-toggle" aria-label="Open help" title="Open help">?</button>
 
         <div class="toolbar">
             <h1>MD2PDF</h1>
@@ -68,12 +69,13 @@
 
         <div id="workspaceShell" class="workspace-shell">
             <aside id="documentSidebar" class="document-sidebar">
-                <div class="document-sidebar-header">
-                    <button id="sidebarToggleBtn" class="sidebar-toggle-btn" aria-label="Collapse document list" title="Collapse document list">&lt;</button>
-                    <h3 class="document-sidebar-title">Open Files</h3>
-                </div>
+                <button id="sidebarToggleBtn" class="document-sidebar-header" type="button" aria-label="Collapse document list" title="Collapse document list">
+                    <span id="sidebarToggleIcon" class="sidebar-toggle-icon" aria-hidden="true">&lt;</span>
+                    <span class="document-sidebar-title">Open Files</span>
+                </button>
                 <div id="documentList" class="document-list" aria-label="Open markdown files"></div>
             </aside>
+            <div id="sidebarDivider" class="sidebar-divider" role="separator" aria-label="Resize file panel" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="520" aria-valuenow="290" tabindex="0"></div>
 
             <div id="mainContainer" class="main-container">
                 <div class="editor-pane">
@@ -171,6 +173,216 @@ $$
                 <button id="exportStartBtn" type="button">Start Export</button>
                 <button id="exportCancelBtn" type="button" disabled>Cancel</button>
                 <button id="exportDismissBtn" type="button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="helpModalBackdrop" class="help-modal-backdrop" hidden>
+        <div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+            <div class="help-modal-header">
+                <h2 id="helpModalTitle">MD2PDF Help Wiki</h2>
+                <button id="helpModalCloseBtn" class="help-close-btn" type="button" aria-label="Close help dialog" title="Close help dialog">&times;</button>
+            </div>
+            <div id="helpModalBody" class="help-modal-body">
+                <div class="help-wiki-layout">
+                    <nav class="help-toc" aria-label="Help topics">
+                        <h3>Contents</h3>
+                        <ul>
+                            <li><a href="#help-getting-started">Getting Started</a></li>
+                            <li><a href="#help-template">Full Markdown Template</a></li>
+                            <li><a href="#help-formatting">Formatting Guide</a></li>
+                            <li><a href="#help-tables-code">Tables and Code</a></li>
+                            <li><a href="#help-math">Math and Matrices</a></li>
+                            <li><a href="#help-navigation">Navigation and Focus Sync</a></li>
+                            <li><a href="#help-pagination">Pagination Tips</a></li>
+                            <li><a href="#help-export">Export Workflows</a></li>
+                            <li><a href="#help-troubleshooting">Troubleshooting</a></li>
+                        </ul>
+                    </nav>
+
+                    <div class="help-content">
+                        <section class="help-section" id="help-getting-started">
+                            <h3>Getting Started</h3>
+                            <ol>
+                                <li>Load one or more markdown files with <strong>Upload</strong>, or start typing immediately.</li>
+                                <li>Choose the active document in <strong>Open Files</strong> (left panel).</li>
+                                <li>Set <strong>Font</strong>, <strong>Margin</strong>, and <strong>Page size</strong> in the toolbar.</li>
+                                <li>Use preview controls: <strong>Fit Width</strong>, <strong>Fit Page</strong>, <strong>Zoom +/-</strong>.</li>
+                                <li>Click <strong>Export PDF</strong> and choose current file or all open files.</li>
+                            </ol>
+                            <p>Tip: keep <strong>Fit Width</strong> while editing, and switch to <strong>Fit Page</strong> for final visual QA.</p>
+                        </section>
+
+                        <section class="help-section" id="help-template">
+                            <h3>Full Markdown Template (Copy/Paste Starter)</h3>
+                            <pre><code># Project Document Title
+
+Author: Your Name  
+Date: 2026-02-09
+
+## 1. Executive Summary
+Write a short summary paragraph here.
+
+## 2. Scope
+- In scope item
+- Out of scope item
+
+## 3. Definitions
+| Term | Meaning |
+|------|---------|
+| API  | Application Programming Interface |
+| SLA  | Service Level Agreement |
+
+## 4. Main Content
+### 4.1 Section Heading
+Normal text with **bold**, *italic*, and `inline code`.
+
+> Use blockquotes for notes and assumptions.
+
+1. Ordered item one
+2. Ordered item two
+
+- Unordered item
+- Another item
+
+```ts
+function example(input: string): string {
+  return input.trim()
+}
+```
+
+Inline math example: $E = mc^2$
+
+Display math:
+$$
+\int_0^1 x^2\,dx = \frac{1}{3}
+$$
+
+## 5. Conclusion
+Close with outcomes, risks, and next steps.
+</code></pre>
+                        </section>
+
+                        <section class="help-section" id="help-formatting">
+                            <h3>Formatting Guide (High-Quality Markdown)</h3>
+                            <ul>
+                                <li>Use heading levels in order: <code>#</code>, then <code>##</code>, then <code>###</code>.</li>
+                                <li>Leave a blank line between blocks (paragraphs, lists, tables, code).</li>
+                                <li>Prefer short paragraphs for cleaner pagination.</li>
+                                <li>Use two trailing spaces for explicit line breaks when needed.</li>
+                            </ul>
+                            <pre><code># H1 Title
+## H2 Section
+### H3 Subsection
+
+Paragraph one.
+
+Paragraph two with **bold** and *italic* text.
+
+Use `inline code` for command names and identifiers.
+</code></pre>
+                        </section>
+
+                        <section class="help-section" id="help-tables-code">
+                            <h3>Tables, Code Blocks, and Escaping</h3>
+                            <p>Tables and fenced code blocks are treated as atomic blocks where possible for better page flow.</p>
+                            <pre><code>| Feature | Status | Notes |
+|:--------|:------:|------:|
+| Upload  |   OK   | Multi-file |
+| Export  |   OK   | ZIP for all |
+
+```bash
+npm install
+npm run dev
+```
+
+To show backticks literally, wrap with double backticks:
+``Use `code` inside text``
+</code></pre>
+                        </section>
+
+                        <section class="help-section" id="help-math">
+                            <h3>Math and Matrices (KaTeX)</h3>
+                            <p>Use single dollars for inline math and double dollars for display math blocks.</p>
+                            <pre><code>Inline:
+The energy relation is $E = mc^2$.
+
+Display:
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+
+Aligned system:
+$$
+\begin{aligned}
+2x + y &= 5 \\
+x - y &= 1
+\end{aligned}
+$$
+
+Matrix:
+$$
+\begin{bmatrix}
+1 & 2 \\
+3 & 4
+\end{bmatrix}
+$$
+
+Piecewise:
+$$
+f(x)=
+\begin{cases}
+x^2, & x \ge 0 \\
+-x,  & x &lt; 0
+\end{cases}
+$$
+</code></pre>
+                            <p>If a matrix appears wrong, check that row breaks use <code>\\</code> inside the math block.</p>
+                        </section>
+
+                        <section class="help-section" id="help-navigation">
+                            <h3>Navigation and Focus Sync</h3>
+                            <ul>
+                                <li>Click in markdown to focus the corresponding rendered block in preview.</li>
+                                <li>Click in preview to jump back to matching source lines in the editor.</li>
+                                <li>Repeated clicks in the same section suppress extra pulse animations when views are unchanged.</li>
+                                <li>Use pane dividers to optimize layout while reviewing dense content.</li>
+                            </ul>
+                        </section>
+
+                        <section class="help-section" id="help-pagination">
+                            <h3>Pagination Tips for Cleaner Pages</h3>
+                            <ul>
+                                <li>Keep headings close to their first paragraph.</li>
+                                <li>Prefer one table per topic rather than very large tables.</li>
+                                <li>Break oversized code samples into logical chunks.</li>
+                                <li>Use sectioning with <code>##</code> and <code>###</code> to stabilize page flow.</li>
+                                <li>Use medium margins and 12px font for balanced readability and page density.</li>
+                            </ul>
+                        </section>
+
+                        <section class="help-section" id="help-export">
+                            <h3>Export Workflows</h3>
+                            <ul>
+                                <li><strong>Current file</strong>: generates one PDF using the active markdown filename.</li>
+                                <li><strong>All open files</strong>: generates one PDF per file and downloads a single ZIP.</li>
+                                <li>Export is headless (no browser print dialog).</li>
+                                <li>The progress panel shows completed count, active step, file timing, and total timing.</li>
+                            </ul>
+                        </section>
+
+                        <section class="help-section" id="help-troubleshooting">
+                            <h3>Troubleshooting Quick Fixes</h3>
+                            <ul>
+                                <li><strong>Blank preview:</strong> verify the file has content and valid markdown structure.</li>
+                                <li><strong>Math not rendering:</strong> ensure delimiters are correct and braces are balanced.</li>
+                                <li><strong>Unexpected page breaks:</strong> split long tables/code blocks into smaller sections.</li>
+                                <li><strong>Wrong export names:</strong> rename files in Open Files (affects downloads only).</li>
+                                <li><strong>Layout feels cramped:</strong> resize the sidebar and pane dividers to your workflow.</li>
+                            </ul>
+                        </section>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

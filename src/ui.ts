@@ -42,6 +42,19 @@ interface SavePayload {
 }
 
 const THEME_STORAGE_KEY = 'md2pdf.theme';
+const SIDEBAR_WIDTH_STORAGE_KEY = 'md2pdf.sidebar.width';
+const PREVIEW_PULSE_SUPPRESSION_WINDOW_MS = 2 * 60 * 1000;
+
+interface PreviewPulseState {
+  anchorKey: string;
+  timestampMs: number;
+  previewScrollRevision: number;
+  editorScrollRevision: number;
+}
+
+interface FocusPreviewOptions {
+  suppressPulseIfStable?: boolean;
+}
 
 const PAGE_SIZES: Record<PageSizeKey, PageSizeSpec> = {
   a4: { widthMm: 210, heightMm: 297 },
@@ -62,12 +75,16 @@ export class UIController {
   private pageSizeSelect: HTMLSelectElement;
 
   private themeToggleBtn: HTMLButtonElement;
+  private helpToggleBtn: HTMLButtonElement;
   private workspaceShell: HTMLElement;
   private sidebarToggleBtn: HTMLButtonElement;
+  private sidebarToggleIcon: HTMLElement;
   private documentList: HTMLElement;
+  private sidebarDivider: HTMLElement;
 
   private mainContainer: HTMLElement;
   private paneDivider: HTMLElement;
+  private markdownEditor: HTMLTextAreaElement;
 
   private previewViewport: HTMLElement;
   private previewCanvasSizer: HTMLElement;
@@ -93,6 +110,9 @@ export class UIController {
   private exportCancelBtn: HTMLButtonElement;
   private exportDismissBtn: HTMLButtonElement;
 
+  private helpModalBackdrop: HTMLElement;
+  private helpModalCloseBtn: HTMLButtonElement;
+
   private currentMathMode: MathRenderMode = 'html';
   private currentTheme: ThemeMode = 'dark';
   private isSidebarCollapsed = false;
@@ -109,14 +129,23 @@ export class UIController {
   private previewFocusTarget: HTMLElement | null = null;
   private previewFocusPage: HTMLElement | null = null;
   private previewFocusResetTimer: number | null = null;
+  private recentEditorPulseState: PreviewPulseState | null = null;
+  private previewScrollRevision = 0;
+  private editorScrollRevision = 0;
+  private ignorePreviewScrollRevisionUntilMs = 0;
 
   private readonly minSplitPercent = 20;
   private readonly maxSplitPercent = 80;
   private splitPercent = 50;
   private isDraggingDivider = false;
+  private readonly minSidebarWidthPx = 220;
+  private readonly maxSidebarWidthPx = 520;
+  private sidebarWidthPx = 290;
+  private isDraggingSidebarDivider = false;
 
   private isExportModalOpen = false;
   private isExporting = false;
+  private isHelpModalOpen = false;
   private exportContext: ExportModalContext = {
     activeFilename: 'Untitled.md',
     totalFiles: 1,
@@ -150,8 +179,25 @@ export class UIController {
     }
 
     this.isDraggingDivider = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    this.releaseDragStylesIfIdle();
+  };
+
+  private readonly onSidebarDividerPointerMove = (event: PointerEvent): void => {
+    if (!this.isDraggingSidebarDivider || this.isStackedLayout() || this.isSidebarCollapsed) {
+      return;
+    }
+
+    this.updateSidebarWidthFromPointerX(event.clientX);
+    this.refreshPreviewViewport();
+  };
+
+  private readonly onSidebarDividerPointerUp = (): void => {
+    if (!this.isDraggingSidebarDivider) {
+      return;
+    }
+
+    this.isDraggingSidebarDivider = false;
+    this.releaseDragStylesIfIdle();
   };
 
   constructor() {
@@ -165,12 +211,16 @@ export class UIController {
     this.pageSizeSelect = this.requireElement<HTMLSelectElement>('pageSizeSelect');
 
     this.themeToggleBtn = this.requireElement<HTMLButtonElement>('themeToggle');
+    this.helpToggleBtn = this.requireElement<HTMLButtonElement>('helpToggleBtn');
     this.workspaceShell = this.requireElement<HTMLElement>('workspaceShell');
     this.sidebarToggleBtn = this.requireElement<HTMLButtonElement>('sidebarToggleBtn');
+    this.sidebarToggleIcon = this.requireElement<HTMLElement>('sidebarToggleIcon');
     this.documentList = this.requireElement<HTMLElement>('documentList');
+    this.sidebarDivider = this.requireElement<HTMLElement>('sidebarDivider');
 
     this.mainContainer = this.requireElement<HTMLElement>('mainContainer');
     this.paneDivider = this.requireElement<HTMLElement>('paneDivider');
+    this.markdownEditor = this.requireElement<HTMLTextAreaElement>('markdownEditor');
 
     this.previewViewport = this.requireElement<HTMLElement>('previewViewport');
     this.previewCanvasSizer = this.requireElement<HTMLElement>('previewCanvasSizer');
@@ -195,10 +245,13 @@ export class UIController {
     this.exportStartBtn = this.requireElement<HTMLButtonElement>('exportStartBtn');
     this.exportCancelBtn = this.requireElement<HTMLButtonElement>('exportCancelBtn');
     this.exportDismissBtn = this.requireElement<HTMLButtonElement>('exportDismissBtn');
+    this.helpModalBackdrop = this.requireElement<HTMLElement>('helpModalBackdrop');
+    this.helpModalCloseBtn = this.requireElement<HTMLButtonElement>('helpModalCloseBtn');
 
     this.setupEventListeners();
     this.applySettings();
     this.initializeTheme();
+    this.initializeSidebarWidth();
     this.setSplitPercent(this.splitPercent);
     this.updateMathToggleButton();
     this.updateSidebarToggleButton();
@@ -322,7 +375,7 @@ export class UIController {
    * Scrolls preview to the closest rendered block for a given markdown line.
    * Returns true when a matching block was found.
    */
-  focusPreviewOnSourceLine(lineNumber: number): boolean {
+  focusPreviewOnSourceLine(lineNumber: number, options: FocusPreviewOptions = {}): boolean {
     if (!Number.isFinite(lineNumber) || lineNumber < 1) {
       return false;
     }
@@ -333,7 +386,11 @@ export class UIController {
     }
 
     this.scrollPreviewToTarget(target);
-    this.highlightPreviewTarget(target);
+    const shouldSuppressPulse = options.suppressPulseIfStable === true && this.shouldSuppressEditorPulse(target);
+    if (!shouldSuppressPulse) {
+      this.highlightPreviewTarget(target);
+    }
+    this.rememberEditorPulseState(target);
     return true;
   }
 
@@ -413,6 +470,10 @@ export class UIController {
   }
 
   openExportModal(context?: ExportModalContext): void {
+    if (this.isHelpModalOpen) {
+      this.closeHelpModal();
+    }
+
     if (context) {
       this.exportContext = this.normalizeExportContext(context);
     } else if (this.exportContextRequestCallback) {
@@ -621,10 +682,26 @@ export class UIController {
       }
     });
 
+    this.helpModalBackdrop.addEventListener('click', (event) => {
+      if (event.target === this.helpModalBackdrop) {
+        this.closeHelpModal();
+      }
+    });
+
+    this.helpModalCloseBtn.addEventListener('click', () => {
+      this.closeHelpModal();
+    });
+
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && this.isExportModalOpen && !this.isExporting) {
         event.preventDefault();
         this.closeExportModal();
+        return;
+      }
+
+      if (event.key === 'Escape' && this.isHelpModalOpen) {
+        event.preventDefault();
+        this.closeHelpModal();
       }
     });
 
@@ -654,6 +731,10 @@ export class UIController {
 
     this.themeToggleBtn.addEventListener('click', () => {
       this.toggleTheme();
+    });
+
+    this.helpToggleBtn.addEventListener('click', () => {
+      this.openHelpModal();
     });
 
     this.fitWidthBtn.addEventListener('click', () => {
@@ -704,6 +785,17 @@ export class UIController {
       this.applyPreviewZoom();
     }, { passive: false });
 
+    this.previewViewport.addEventListener('scroll', () => {
+      if (Date.now() < this.ignorePreviewScrollRevisionUntilMs) {
+        return;
+      }
+      this.previewScrollRevision += 1;
+    }, { passive: true });
+
+    this.markdownEditor.addEventListener('scroll', () => {
+      this.editorScrollRevision += 1;
+    }, { passive: true });
+
     this.previewContainer.addEventListener('click', (event) => {
       this.handlePreviewSourceClick(event);
     });
@@ -716,8 +808,18 @@ export class UIController {
       this.handleDividerKeyboard(event);
     });
 
+    this.sidebarDivider.addEventListener('pointerdown', (event) => {
+      this.startSidebarDividerDrag(event);
+    });
+
+    this.sidebarDivider.addEventListener('keydown', (event) => {
+      this.handleSidebarDividerKeyboard(event);
+    });
+
     window.addEventListener('pointermove', this.onDividerPointerMove);
     window.addEventListener('pointerup', this.onDividerPointerUp);
+    window.addEventListener('pointermove', this.onSidebarDividerPointerMove);
+    window.addEventListener('pointerup', this.onSidebarDividerPointerUp);
     window.addEventListener('resize', () => {
       this.refreshPreviewViewport();
     });
@@ -748,6 +850,24 @@ export class UIController {
     this.applyTheme(initialTheme);
   }
 
+  private initializeSidebarWidth(): void {
+    let storedWidth: string | null = null;
+
+    try {
+      storedWidth = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    } catch {
+      storedWidth = null;
+    }
+
+    if (!storedWidth) {
+      this.setSidebarWidth(this.sidebarWidthPx, false);
+      return;
+    }
+
+    const parsed = Number.parseFloat(storedWidth);
+    this.setSidebarWidth(Number.isFinite(parsed) ? parsed : this.sidebarWidthPx, false);
+  }
+
   private applyTheme(theme: ThemeMode): void {
     this.currentTheme = theme;
     document.documentElement.dataset.theme = theme;
@@ -769,9 +889,26 @@ export class UIController {
     this.applyTheme(nextTheme);
   }
 
+  private openHelpModal(): void {
+    this.helpModalBackdrop.hidden = false;
+    document.body.classList.add('help-modal-open');
+    this.isHelpModalOpen = true;
+    this.helpModalCloseBtn.focus();
+  }
+
+  private closeHelpModal(): void {
+    this.helpModalBackdrop.hidden = true;
+    document.body.classList.remove('help-modal-open');
+    this.isHelpModalOpen = false;
+  }
+
   private toggleSidebar(): void {
     this.isSidebarCollapsed = !this.isSidebarCollapsed;
     this.workspaceShell.classList.toggle('sidebar-collapsed', this.isSidebarCollapsed);
+    if (this.isSidebarCollapsed) {
+      this.isDraggingSidebarDivider = false;
+      this.releaseDragStylesIfIdle();
+    }
     this.updateSidebarToggleButton();
 
     requestAnimationFrame(() => {
@@ -780,7 +917,7 @@ export class UIController {
   }
 
   private updateSidebarToggleButton(): void {
-    this.sidebarToggleBtn.textContent = this.isSidebarCollapsed ? '>' : '<';
+    this.sidebarToggleIcon.textContent = this.isSidebarCollapsed ? '>' : '<';
     const label = this.isSidebarCollapsed ? 'Expand document list' : 'Collapse document list';
     this.sidebarToggleBtn.setAttribute('aria-label', label);
     this.sidebarToggleBtn.setAttribute('title', label);
@@ -977,6 +1114,50 @@ export class UIController {
     return { start, end };
   }
 
+  private shouldSuppressEditorPulse(target: HTMLElement): boolean {
+    const previous = this.recentEditorPulseState;
+    if (!previous) {
+      return false;
+    }
+
+    const now = Date.now();
+    if ((now - previous.timestampMs) > PREVIEW_PULSE_SUPPRESSION_WINDOW_MS) {
+      return false;
+    }
+
+    const currentAnchorKey = this.getAnchorKey(target);
+    if (!currentAnchorKey || currentAnchorKey !== previous.anchorKey) {
+      return false;
+    }
+
+    return previous.previewScrollRevision === this.previewScrollRevision
+      && previous.editorScrollRevision === this.editorScrollRevision;
+  }
+
+  private rememberEditorPulseState(target: HTMLElement): void {
+    const anchorKey = this.getAnchorKey(target);
+    if (!anchorKey) {
+      this.recentEditorPulseState = null;
+      return;
+    }
+
+    this.recentEditorPulseState = {
+      anchorKey,
+      timestampMs: Date.now(),
+      previewScrollRevision: this.previewScrollRevision,
+      editorScrollRevision: this.editorScrollRevision,
+    };
+  }
+
+  private getAnchorKey(target: HTMLElement): string | null {
+    const range = this.readSourceLineRange(target);
+    if (!range) {
+      return null;
+    }
+
+    return `${range.start}:${range.end}`;
+  }
+
   private scrollPreviewToTarget(target: HTMLElement): void {
     const viewportRect = this.previewViewport.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
@@ -997,6 +1178,7 @@ export class UIController {
 
     const nextLeft = Math.max(0, this.previewViewport.scrollLeft + deltaX);
 
+    this.ignorePreviewScrollRevisionUntilMs = Date.now() + 850;
     this.previewViewport.scrollTo({
       top: nextTop,
       left: nextLeft,
@@ -1164,6 +1346,79 @@ export class UIController {
 
   private roundZoom(value: number): number {
     return Math.round(value * 100) / 100;
+  }
+
+  private startSidebarDividerDrag(event: PointerEvent): void {
+    if (this.isStackedLayout() || this.isSidebarCollapsed) {
+      return;
+    }
+
+    this.isDraggingSidebarDivider = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    this.updateSidebarWidthFromPointerX(event.clientX);
+  }
+
+  private handleSidebarDividerKeyboard(event: KeyboardEvent): void {
+    if (this.isStackedLayout() || this.isSidebarCollapsed) {
+      return;
+    }
+
+    let handled = true;
+
+    if (event.key === 'ArrowLeft') {
+      this.setSidebarWidth(this.sidebarWidthPx - 12);
+    } else if (event.key === 'ArrowRight') {
+      this.setSidebarWidth(this.sidebarWidthPx + 12);
+    } else if (event.key === 'Home') {
+      this.setSidebarWidth(this.minSidebarWidthPx);
+    } else if (event.key === 'End') {
+      this.setSidebarWidth(this.maxSidebarWidthPx);
+    } else {
+      handled = false;
+    }
+
+    if (handled) {
+      event.preventDefault();
+      this.refreshPreviewViewport();
+    }
+  }
+
+  private updateSidebarWidthFromPointerX(clientX: number): void {
+    const rect = this.workspaceShell.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+
+    const desiredWidth = clientX - rect.left;
+    this.setSidebarWidth(desiredWidth);
+    this.refreshPreviewViewport();
+  }
+
+  private setSidebarWidth(widthPx: number, persist = true): void {
+    const clamped = Math.round(this.clamp(widthPx, this.minSidebarWidthPx, this.maxSidebarWidthPx));
+    this.sidebarWidthPx = clamped;
+    document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
+    this.sidebarDivider.setAttribute('aria-valuenow', String(clamped));
+
+    if (!persist) {
+      return;
+    }
+
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped));
+    } catch {
+      // Ignore persistence errors.
+    }
+  }
+
+  private releaseDragStylesIfIdle(): void {
+    if (this.isDraggingDivider || this.isDraggingSidebarDivider) {
+      return;
+    }
+
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
   }
 
   private startDividerDrag(event: PointerEvent): void {

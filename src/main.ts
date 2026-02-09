@@ -380,7 +380,7 @@ class MD2PDFApp {
       return;
     }
 
-    this.ui.focusPreviewOnSourceLine(lineNumber);
+    this.ui.focusPreviewOnSourceLine(lineNumber, { suppressPulseIfStable: true });
   }
 
   private focusEditorForPreviewLine(lineNumber: number): void {
