@@ -32,8 +32,7 @@
                 <input type="file" id="uploadFile" accept=".md,.txt" class="hidden-file-input" aria-label="Upload markdown file" multiple>
                 <button id="uploadBtn">Upload</button>
                 <button id="saveBtn">Save</button>
-                <button id="exportCurrentPdfBtn">Export PDF</button>
-                <button id="exportAllPdfBtn">Export All PDF</button>
+                <button id="exportPdfBtn">Export PDF</button>
                 <button id="mathToggle">Math: HTML</button>
                 <label class="control-label">
                     Font:
@@ -130,6 +129,49 @@ $$
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="exportModalBackdrop" class="export-modal-backdrop" hidden>
+        <div class="export-modal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
+            <div class="export-modal-header">
+                <h2 id="exportModalTitle">Export PDF</h2>
+                <button id="exportModalCloseBtn" class="export-close-btn" type="button" aria-label="Close export dialog" title="Close export dialog">&times;</button>
+            </div>
+
+            <p id="exportModalSummary" class="export-modal-summary">
+                Choose what to export, then start. Progress updates will appear below while files are processed.
+            </p>
+
+            <fieldset class="export-scope-group">
+                <legend>Export scope</legend>
+                <label class="export-scope-option">
+                    <input id="exportScopeCurrent" type="radio" name="exportScope" value="current" checked>
+                    <span id="exportScopeCurrentLabel">Current file</span>
+                </label>
+                <label class="export-scope-option">
+                    <input id="exportScopeAll" type="radio" name="exportScope" value="all">
+                    <span id="exportScopeAllLabel">All open files</span>
+                </label>
+            </fieldset>
+
+            <div class="export-progress-panel" aria-live="polite">
+                <div class="export-progress-head">
+                    <span id="exportProgressText">Ready to export</span>
+                    <span id="exportProgressCount">0 / 0</span>
+                </div>
+                <div class="export-progress-track">
+                    <div id="exportProgressBar" class="export-progress-bar"></div>
+                </div>
+            </div>
+
+            <div id="exportLog" class="export-log" role="status" aria-live="polite"></div>
+
+            <div class="export-modal-actions">
+                <button id="exportStartBtn" type="button">Start Export</button>
+                <button id="exportCancelBtn" type="button" disabled>Cancel</button>
+                <button id="exportDismissBtn" type="button">Close</button>
             </div>
         </div>
     </div>
