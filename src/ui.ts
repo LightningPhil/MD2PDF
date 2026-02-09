@@ -1,12 +1,43 @@
 import { MathRenderMode } from './katex.js';
 
-type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
-type ThemeMode = 'dark' | 'light';
-type PageSizeKey = 'a4' | 'letter' | 'legal' | 'tabloid' | 'a3';
+export type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
+export type ThemeMode = 'dark' | 'light';
+export type PageSizeKey = 'a4' | 'letter' | 'legal' | 'tabloid' | 'a3';
+export type ExportScope = 'current' | 'all';
 
-interface PageSizeSpec {
+export interface PageSizeSpec {
   widthMm: number;
   heightMm: number;
+}
+
+export interface UploadedMarkdownFile {
+  filename: string;
+  content: string;
+}
+
+export interface DocumentListItem {
+  id: string;
+  filename: string;
+  pageCount: number;
+  isActive: boolean;
+}
+
+export interface ExportModalContext {
+  activeFilename: string;
+  totalFiles: number;
+}
+
+export interface ExportProgressUpdate {
+  processed: number;
+  total: number;
+  message: string;
+  totalElapsedMs?: number;
+  currentFileElapsedMs?: number;
+}
+
+interface SavePayload {
+  content: string;
+  filename: string;
 }
 
 const THEME_STORAGE_KEY = 'md2pdf.theme';
@@ -30,6 +61,10 @@ export class UIController {
   private pageSizeSelect: HTMLSelectElement;
 
   private themeToggleBtn: HTMLButtonElement;
+  private workspaceShell: HTMLElement;
+  private sidebarToggleBtn: HTMLButtonElement;
+  private documentList: HTMLElement;
+
   private mainContainer: HTMLElement;
   private paneDivider: HTMLElement;
 
@@ -42,8 +77,24 @@ export class UIController {
   private zoomOutBtn: HTMLButtonElement;
   private zoomReadout: HTMLElement;
 
+  private exportModalBackdrop: HTMLElement;
+  private exportModalCloseBtn: HTMLButtonElement;
+  private exportModalSummary: HTMLElement;
+  private exportScopeCurrent: HTMLInputElement;
+  private exportScopeAll: HTMLInputElement;
+  private exportScopeCurrentLabel: HTMLElement;
+  private exportScopeAllLabel: HTMLElement;
+  private exportProgressText: HTMLElement;
+  private exportProgressCount: HTMLElement;
+  private exportProgressBar: HTMLElement;
+  private exportLog: HTMLElement;
+  private exportStartBtn: HTMLButtonElement;
+  private exportCancelBtn: HTMLButtonElement;
+  private exportDismissBtn: HTMLButtonElement;
+
   private currentMathMode: MathRenderMode = 'html';
   private currentTheme: ThemeMode = 'dark';
+  private isSidebarCollapsed = false;
 
   private zoomMode: ZoomMode = 'fit-width';
   private zoomLevel = 1;
@@ -58,10 +109,22 @@ export class UIController {
   private splitPercent = 50;
   private isDraggingDivider = false;
 
+  private isExportModalOpen = false;
+  private isExporting = false;
+  private exportContext: ExportModalContext = {
+    activeFilename: 'Untitled.md',
+    totalFiles: 1,
+  };
+
   // Callbacks
-  private fileUploadCallback?: (content: string, filename: string) => void;
-  private fileSaveCallback?: () => string;
-  private pdfExportCallback?: () => void;
+  private fileUploadCallback?: (files: UploadedMarkdownFile[]) => void;
+  private fileSaveCallback?: () => SavePayload;
+  private exportContextRequestCallback?: () => ExportModalContext;
+  private exportStartCallback?: (scope: ExportScope) => void;
+  private exportCancelCallback?: () => void;
+  private documentSelectCallback?: (documentId: string) => void;
+  private documentRenameCallback?: (documentId: string, nextFilename: string) => void;
+  private documentCloseCallback?: (documentId: string) => void;
   private mathModeChangeCallback?: (mode: MathRenderMode) => void;
   private settingsChangeCallback?: () => void;
 
@@ -95,6 +158,10 @@ export class UIController {
     this.pageSizeSelect = this.requireElement<HTMLSelectElement>('pageSizeSelect');
 
     this.themeToggleBtn = this.requireElement<HTMLButtonElement>('themeToggle');
+    this.workspaceShell = this.requireElement<HTMLElement>('workspaceShell');
+    this.sidebarToggleBtn = this.requireElement<HTMLButtonElement>('sidebarToggleBtn');
+    this.documentList = this.requireElement<HTMLElement>('documentList');
+
     this.mainContainer = this.requireElement<HTMLElement>('mainContainer');
     this.paneDivider = this.requireElement<HTMLElement>('paneDivider');
 
@@ -107,33 +174,68 @@ export class UIController {
     this.zoomOutBtn = this.requireElement<HTMLButtonElement>('zoomOutBtn');
     this.zoomReadout = this.requireElement<HTMLElement>('zoomReadout');
 
+    this.exportModalBackdrop = this.requireElement<HTMLElement>('exportModalBackdrop');
+    this.exportModalCloseBtn = this.requireElement<HTMLButtonElement>('exportModalCloseBtn');
+    this.exportModalSummary = this.requireElement<HTMLElement>('exportModalSummary');
+    this.exportScopeCurrent = this.requireElement<HTMLInputElement>('exportScopeCurrent');
+    this.exportScopeAll = this.requireElement<HTMLInputElement>('exportScopeAll');
+    this.exportScopeCurrentLabel = this.requireElement<HTMLElement>('exportScopeCurrentLabel');
+    this.exportScopeAllLabel = this.requireElement<HTMLElement>('exportScopeAllLabel');
+    this.exportProgressText = this.requireElement<HTMLElement>('exportProgressText');
+    this.exportProgressCount = this.requireElement<HTMLElement>('exportProgressCount');
+    this.exportProgressBar = this.requireElement<HTMLElement>('exportProgressBar');
+    this.exportLog = this.requireElement<HTMLElement>('exportLog');
+    this.exportStartBtn = this.requireElement<HTMLButtonElement>('exportStartBtn');
+    this.exportCancelBtn = this.requireElement<HTMLButtonElement>('exportCancelBtn');
+    this.exportDismissBtn = this.requireElement<HTMLButtonElement>('exportDismissBtn');
+
     this.setupEventListeners();
     this.applySettings();
     this.initializeTheme();
     this.setSplitPercent(this.splitPercent);
     this.updateMathToggleButton();
+    this.updateSidebarToggleButton();
     this.refreshPreviewViewport();
+    this.resetExportPanel();
+    this.applyExportContext();
   }
 
   /**
    * Sets the callback for file upload.
    */
-  onFileUpload(callback: (content: string, filename: string) => void): void {
+  onFileUpload(callback: (files: UploadedMarkdownFile[]) => void): void {
     this.fileUploadCallback = callback;
   }
 
   /**
    * Sets the callback for file save.
    */
-  onFileSave(callback: () => string): void {
+  onFileSave(callback: () => SavePayload): void {
     this.fileSaveCallback = callback;
   }
 
-  /**
-   * Sets the callback for PDF export.
-   */
-  onPdfExport(callback: () => void): void {
-    this.pdfExportCallback = callback;
+  onExportContextRequest(callback: () => ExportModalContext): void {
+    this.exportContextRequestCallback = callback;
+  }
+
+  onExportStart(callback: (scope: ExportScope) => void): void {
+    this.exportStartCallback = callback;
+  }
+
+  onExportCancel(callback: () => void): void {
+    this.exportCancelCallback = callback;
+  }
+
+  onDocumentSelect(callback: (documentId: string) => void): void {
+    this.documentSelectCallback = callback;
+  }
+
+  onDocumentRename(callback: (documentId: string, nextFilename: string) => void): void {
+    this.documentRenameCallback = callback;
+  }
+
+  onDocumentClose(callback: (documentId: string) => void): void {
+    this.documentCloseCallback = callback;
   }
 
   /**
@@ -184,6 +286,14 @@ export class UIController {
     return PAGE_SIZES[this.getPageSize()];
   }
 
+  getFontSize(): number {
+    return parseInt(this.fontSizeSelect.value || '12', 10);
+  }
+
+  getMargin(): number {
+    return parseFloat(this.marginSelect.value || '20');
+  }
+
   /**
    * Recomputes zoom/fit after pages are rendered or viewport changes.
    */
@@ -195,6 +305,184 @@ export class UIController {
     }
 
     this.applyPreviewZoom();
+  }
+
+  renderDocumentList(items: DocumentListItem[]): void {
+    this.documentList.innerHTML = '';
+
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'document-list-empty';
+      empty.textContent = 'No markdown files loaded.';
+      this.documentList.appendChild(empty);
+      return;
+    }
+
+    items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'document-item-row';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'document-item';
+      if (item.isActive) {
+        button.classList.add('is-active');
+      }
+      button.dataset.documentId = item.id;
+      button.title = item.filename;
+
+      const name = document.createElement('span');
+      name.className = 'document-item-name';
+      name.textContent = item.filename;
+
+      const pageCount = document.createElement('span');
+      pageCount.className = 'document-item-pages';
+      pageCount.textContent = `${Math.max(1, item.pageCount)}`;
+
+      button.appendChild(name);
+      button.appendChild(pageCount);
+
+      button.addEventListener('click', () => {
+        this.documentSelectCallback?.(item.id);
+      });
+
+      const actions = document.createElement('div');
+      actions.className = 'document-item-actions';
+
+      const renameBtn = document.createElement('button');
+      renameBtn.type = 'button';
+      renameBtn.className = 'document-item-action';
+      renameBtn.textContent = 'R';
+      renameBtn.setAttribute('aria-label', `Rename ${item.filename}`);
+      renameBtn.setAttribute('title', `Rename ${item.filename}`);
+      renameBtn.addEventListener('click', () => {
+        const nextFilename = window.prompt('Rename file for future downloads:', item.filename);
+        if (nextFilename === null) {
+          return;
+        }
+        this.documentRenameCallback?.(item.id, nextFilename);
+      });
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'document-item-action document-item-action-close';
+      closeBtn.textContent = 'X';
+      closeBtn.setAttribute('aria-label', `Close ${item.filename}`);
+      closeBtn.setAttribute('title', `Close ${item.filename}`);
+      closeBtn.addEventListener('click', () => {
+        this.documentCloseCallback?.(item.id);
+      });
+
+      actions.appendChild(renameBtn);
+      actions.appendChild(closeBtn);
+      row.appendChild(button);
+      row.appendChild(actions);
+
+      this.documentList.appendChild(row);
+    });
+  }
+
+  openExportModal(context?: ExportModalContext): void {
+    if (context) {
+      this.exportContext = this.normalizeExportContext(context);
+    } else if (this.exportContextRequestCallback) {
+      this.exportContext = this.normalizeExportContext(this.exportContextRequestCallback());
+    }
+
+    this.applyExportContext();
+    if (!this.isExporting) {
+      this.resetExportPanel();
+    }
+
+    this.exportModalBackdrop.hidden = false;
+    document.body.classList.add('export-modal-open');
+    this.isExportModalOpen = true;
+
+    requestAnimationFrame(() => {
+      if (this.isExporting) {
+        this.exportCancelBtn.focus();
+      } else if (!this.exportStartBtn.disabled) {
+        this.exportStartBtn.focus();
+      } else {
+        this.exportDismissBtn.focus();
+      }
+    });
+  }
+
+  closeExportModal(): void {
+    if (this.isExporting) {
+      return;
+    }
+
+    this.exportModalBackdrop.hidden = true;
+    document.body.classList.remove('export-modal-open');
+    this.isExportModalOpen = false;
+  }
+
+  setExportBusy(isBusy: boolean): void {
+    this.isExporting = isBusy;
+
+    this.exportPdfBtn.disabled = isBusy;
+    this.exportStartBtn.disabled = isBusy || this.exportContext.totalFiles === 0;
+    this.exportCancelBtn.disabled = !isBusy;
+    this.exportDismissBtn.disabled = isBusy;
+    this.exportModalCloseBtn.disabled = isBusy;
+    this.exportScopeCurrent.disabled = isBusy || this.exportContext.totalFiles === 0;
+    this.exportScopeAll.disabled = isBusy || this.exportContext.totalFiles <= 1;
+
+    this.exportLog.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+    this.exportModalBackdrop.classList.toggle('is-exporting', isBusy);
+
+    if (isBusy && !this.isExportModalOpen) {
+      this.openExportModal(this.exportContext);
+    }
+  }
+
+  setExportProgress(update: ExportProgressUpdate): void {
+    const total = Math.max(0, Math.floor(update.total));
+    const processed = this.clamp(Math.floor(update.processed), 0, Math.max(0, total));
+    const percent = total === 0 ? 0 : Math.round((processed / total) * 100);
+
+    this.exportProgressText.textContent = update.message;
+    const timeParts: string[] = [];
+    if (typeof update.currentFileElapsedMs === 'number' && Number.isFinite(update.currentFileElapsedMs)) {
+      timeParts.push(`file ${this.formatDuration(update.currentFileElapsedMs)}`);
+    }
+    if (typeof update.totalElapsedMs === 'number' && Number.isFinite(update.totalElapsedMs)) {
+      timeParts.push(`total ${this.formatDuration(update.totalElapsedMs)}`);
+    }
+
+    this.exportProgressCount.textContent = timeParts.length > 0
+      ? `${processed} / ${total} | ${timeParts.join(' | ')}`
+      : `${processed} / ${total}`;
+    this.exportProgressBar.style.width = `${percent}%`;
+    this.exportProgressBar.setAttribute('aria-valuetext', `${processed} of ${total}`);
+  }
+
+  setExportSummary(summary: string): void {
+    this.exportModalSummary.textContent = summary;
+  }
+
+  clearExportLog(): void {
+    this.exportLog.innerHTML = '';
+  }
+
+  appendExportLog(message: string): void {
+    const nearBottom = this.exportLog.scrollHeight - this.exportLog.scrollTop - this.exportLog.clientHeight < 32;
+
+    const line = document.createElement('div');
+    line.className = 'export-log-line';
+
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    line.textContent = `[${hh}:${mm}:${ss}] ${message}`;
+    this.exportLog.appendChild(line);
+
+    if (nearBottom) {
+      this.exportLog.scrollTop = this.exportLog.scrollHeight;
+    }
   }
 
   /**
@@ -250,21 +538,68 @@ export class UIController {
 
     this.uploadInput.addEventListener('change', (event) => {
       const target = event.target as HTMLInputElement;
-      const file = target.files?.[0];
-      if (file && this.fileUploadCallback) {
-        this.readFile(file);
+      const files = Array.from(target.files ?? []);
+      if (files.length > 0) {
+        void this.readFiles(files);
       }
+
+      target.value = '';
     });
 
     this.saveBtn.addEventListener('click', () => {
       if (this.fileSaveCallback) {
-        const content = this.fileSaveCallback();
-        this.downloadFile(content, 'document.md');
+        const payload = this.fileSaveCallback();
+        this.downloadFile(payload.content, payload.filename);
       }
     });
 
     this.exportPdfBtn.addEventListener('click', () => {
-      this.pdfExportCallback?.();
+      this.openExportModal();
+    });
+
+    this.exportStartBtn.addEventListener('click', () => {
+      this.exportStartCallback?.(this.getSelectedExportScope());
+    });
+
+    this.exportCancelBtn.addEventListener('click', () => {
+      this.exportCancelCallback?.();
+    });
+
+    this.exportScopeCurrent.addEventListener('change', () => {
+      if (!this.isExporting) {
+        this.resetExportPanel();
+      }
+    });
+
+    this.exportScopeAll.addEventListener('change', () => {
+      if (!this.isExporting) {
+        this.resetExportPanel();
+      }
+    });
+
+    this.exportDismissBtn.addEventListener('click', () => {
+      this.closeExportModal();
+    });
+
+    this.exportModalCloseBtn.addEventListener('click', () => {
+      this.closeExportModal();
+    });
+
+    this.exportModalBackdrop.addEventListener('click', (event) => {
+      if (event.target === this.exportModalBackdrop) {
+        this.closeExportModal();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && this.isExportModalOpen && !this.isExporting) {
+        event.preventDefault();
+        this.closeExportModal();
+      }
+    });
+
+    this.sidebarToggleBtn.addEventListener('click', () => {
+      this.toggleSidebar();
     });
 
     this.mathToggleBtn.addEventListener('click', () => {
@@ -366,14 +701,6 @@ export class UIController {
     root.style.setProperty('--page-height-mm', `${pageSize.heightMm}`);
   }
 
-  private getFontSize(): number {
-    return parseInt(this.fontSizeSelect.value || '12', 10);
-  }
-
-  private getMargin(): number {
-    return parseFloat(this.marginSelect.value || '20');
-  }
-
   private initializeTheme(): void {
     let storedTheme: string | null = null;
 
@@ -406,6 +733,69 @@ export class UIController {
   private toggleTheme(): void {
     const nextTheme: ThemeMode = this.currentTheme === 'dark' ? 'light' : 'dark';
     this.applyTheme(nextTheme);
+  }
+
+  private toggleSidebar(): void {
+    this.isSidebarCollapsed = !this.isSidebarCollapsed;
+    this.workspaceShell.classList.toggle('sidebar-collapsed', this.isSidebarCollapsed);
+    this.updateSidebarToggleButton();
+
+    requestAnimationFrame(() => {
+      this.refreshPreviewViewport();
+    });
+  }
+
+  private updateSidebarToggleButton(): void {
+    this.sidebarToggleBtn.textContent = this.isSidebarCollapsed ? '>' : '<';
+    const label = this.isSidebarCollapsed ? 'Expand document list' : 'Collapse document list';
+    this.sidebarToggleBtn.setAttribute('aria-label', label);
+    this.sidebarToggleBtn.setAttribute('title', label);
+  }
+
+  private normalizeExportContext(context: ExportModalContext): ExportModalContext {
+    const activeFilename = (context.activeFilename || 'No active file').trim() || 'No active file';
+    const totalFiles = Math.max(0, Math.floor(context.totalFiles));
+
+    return {
+      activeFilename,
+      totalFiles,
+    };
+  }
+
+  private applyExportContext(): void {
+    const totalFiles = this.exportContext.totalFiles;
+    this.exportScopeCurrentLabel.textContent = `Current file (${this.exportContext.activeFilename})`;
+    this.exportScopeAllLabel.textContent = `All open files (${totalFiles})`;
+
+    const noDocuments = totalFiles === 0;
+    const disableAll = totalFiles <= 1;
+    this.exportScopeCurrent.disabled = noDocuments || this.isExporting;
+    this.exportScopeAll.disabled = disableAll || this.isExporting;
+    this.exportStartBtn.disabled = this.isExporting || noDocuments;
+    if (disableAll && this.exportScopeAll.checked) {
+      this.exportScopeCurrent.checked = true;
+    }
+  }
+
+  private resetExportPanel(): void {
+    const total = this.exportContext.totalFiles === 0
+      ? 0
+      : this.getSelectedExportScope() === 'all'
+        ? this.exportContext.totalFiles
+        : 1;
+    this.setExportProgress({
+      processed: 0,
+      total,
+      message: total === 0 ? 'No markdown files loaded' : 'Ready to export',
+    });
+    this.clearExportLog();
+    this.setExportSummary(total === 0
+      ? 'Load or create at least one markdown file before exporting.'
+      : 'Choose what to export, then start. Progress updates will appear below while files are processed.');
+  }
+
+  private getSelectedExportScope(): ExportScope {
+    return this.exportScopeAll.checked ? 'all' : 'current';
   }
 
   private getViewportPaddingPx(): { left: number; right: number; top: number; bottom: number } {
@@ -595,22 +985,55 @@ export class UIController {
     return window.matchMedia('(max-width: 1200px)').matches;
   }
 
-  private readFile(file: File): void {
-    const reader = new FileReader();
+  private isMarkdownFile(file: File): boolean {
+    return file.type === 'text/markdown'
+      || file.type === 'text/plain'
+      || file.name.toLowerCase().endsWith('.md')
+      || file.name.toLowerCase().endsWith('.markdown');
+  }
 
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content && this.fileUploadCallback) {
-        this.fileUploadCallback(content, file.name);
-        this.showNotification(`Loaded ${file.name}`, 'success');
+  private async readFiles(files: File[]): Promise<void> {
+    const markdownFiles = files.filter((file) => this.isMarkdownFile(file));
+
+    if (markdownFiles.length === 0) {
+      this.showNotification('Please select markdown (.md) files', 'error');
+      return;
+    }
+
+    try {
+      const loadedFiles = await Promise.all(markdownFiles.map((file) => this.readSingleFile(file)));
+      if (loadedFiles.length > 0) {
+        this.fileUploadCallback?.(loadedFiles);
       }
-    };
 
-    reader.onerror = () => {
-      this.showNotification('Failed to read file', 'error');
-    };
+      const message = loadedFiles.length === 1
+        ? `Loaded ${loadedFiles[0].filename}`
+        : `Loaded ${loadedFiles.length} markdown files`;
+      this.showNotification(message, 'success');
+    } catch (error) {
+      console.error('File read error:', error);
+      this.showNotification('Failed to read one or more files', 'error');
+    }
+  }
 
-    reader.readAsText(file);
+  private readSingleFile(file: File): Promise<UploadedMarkdownFile> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+        const content = String(event.target?.result ?? '');
+        resolve({
+          filename: file.name,
+          content,
+        });
+      };
+
+      reader.onerror = () => {
+        reject(new Error(`Failed to read file: ${file.name}`));
+      };
+
+      reader.readAsText(file);
+    });
   }
 
   private downloadFile(content: string, filename: string): void {
@@ -639,9 +1062,7 @@ export class UIController {
     const newMode: MathRenderMode = this.currentMathMode === 'html' ? 'svg' : 'html';
     this.setMathMode(newMode);
 
-    if (this.mathModeChangeCallback) {
-      this.mathModeChangeCallback(newMode);
-    }
+    this.mathModeChangeCallback?.(newMode);
   }
 
   private updateMathToggleButton(): void {
@@ -661,18 +1082,26 @@ export class UIController {
     app.addEventListener('drop', (event) => {
       event.preventDefault();
 
-      const files = event.dataTransfer?.files;
-      if (!files || files.length === 0) {
+      const files = Array.from(event.dataTransfer?.files ?? []);
+      if (files.length === 0) {
         return;
       }
 
-      const file = files[0];
-      if (file.type === 'text/markdown' || file.name.endsWith('.md') || file.type === 'text/plain') {
-        this.readFile(file);
-      } else {
-        this.showNotification('Please drop a markdown (.md) file', 'error');
-      }
+      void this.readFiles(files);
     });
+  }
+
+  private formatDuration(milliseconds: number): string {
+    const safeMs = Math.max(0, milliseconds);
+    const totalSeconds = safeMs / 1000;
+
+    if (totalSeconds < 60) {
+      return `${totalSeconds.toFixed(1)}s`;
+    }
+
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds - (minutes * 60);
+    return `${minutes}m ${seconds.toFixed(1)}s`;
   }
 
   private clamp(value: number, min: number, max: number): number {

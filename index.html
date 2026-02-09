@@ -29,7 +29,7 @@
         <div class="toolbar">
             <h1>MD2PDF</h1>
             <div class="controls">
-                <input type="file" id="uploadFile" accept=".md,.txt" class="hidden-file-input" aria-label="Upload markdown file">
+                <input type="file" id="uploadFile" accept=".md,.txt" class="hidden-file-input" aria-label="Upload markdown file" multiple>
                 <button id="uploadBtn">Upload</button>
                 <button id="saveBtn">Save</button>
                 <button id="exportPdfBtn">Export PDF</button>
@@ -67,10 +67,19 @@
             </div>
         </div>
 
-        <div id="mainContainer" class="main-container">
-            <div class="editor-pane">
-                <h3>Markdown Editor</h3>
-                <textarea id="markdownEditor" placeholder="Enter your markdown here...
+        <div id="workspaceShell" class="workspace-shell">
+            <aside id="documentSidebar" class="document-sidebar">
+                <div class="document-sidebar-header">
+                    <button id="sidebarToggleBtn" class="sidebar-toggle-btn" aria-label="Collapse document list" title="Collapse document list">&lt;</button>
+                    <h3 class="document-sidebar-title">Open Files</h3>
+                </div>
+                <div id="documentList" class="document-list" aria-label="Open markdown files"></div>
+            </aside>
+
+            <div id="mainContainer" class="main-container">
+                <div class="editor-pane">
+                    <h3>Markdown Editor</h3>
+                    <textarea id="markdownEditor" placeholder="Enter your markdown here...
 
 # Welcome to MD2PDF
 
@@ -94,31 +103,75 @@ $$
 | Preview | Yes |
 | Math    | Yes |
 "></textarea>
-            </div>
+                </div>
 
-            <div id="paneDivider" class="pane-divider" role="separator" aria-label="Resize panes" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
+                <div id="paneDivider" class="pane-divider" role="separator" aria-label="Resize panes" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
 
-            <div class="preview-pane">
-                <h3>Page Preview</h3>
-                <div id="previewViewport" class="preview-viewport">
-                    <div class="preview-controls" aria-label="Preview zoom controls">
-                        <button id="fitWidthBtn" class="preview-ghost-button is-active" title="Fit to width">Fit Width</button>
-                        <button id="fitPageBtn" class="preview-ghost-button" title="Fit whole page">Fit Page</button>
-                        <span id="zoomReadout" class="preview-zoom-readout" aria-live="polite">100%</span>
-                        <button id="zoomOutBtn" class="preview-ghost-button" title="Zoom out" aria-label="Zoom out">-</button>
-                        <button id="zoomInBtn" class="preview-ghost-button" title="Zoom in" aria-label="Zoom in">+</button>
-                    </div>
+                <div class="preview-pane">
+                    <h3>Page Preview</h3>
+                    <div id="previewViewport" class="preview-viewport">
+                        <div class="preview-controls" aria-label="Preview zoom controls">
+                            <button id="fitWidthBtn" class="preview-ghost-button is-active" title="Fit to width">Fit Width</button>
+                            <button id="fitPageBtn" class="preview-ghost-button" title="Fit whole page">Fit Page</button>
+                            <span id="zoomReadout" class="preview-zoom-readout" aria-live="polite">100%</span>
+                            <button id="zoomOutBtn" class="preview-ghost-button" title="Zoom out" aria-label="Zoom out">-</button>
+                            <button id="zoomInBtn" class="preview-ghost-button" title="Zoom in" aria-label="Zoom in">+</button>
+                        </div>
 
-                    <div id="previewCanvasSizer" class="preview-canvas-sizer">
-                        <div id="previewContainer">
-                            <div class="page">
-                                <div class="page-content">
-                                    <p>Preview will appear here...</p>
+                        <div id="previewCanvasSizer" class="preview-canvas-sizer">
+                            <div id="previewContainer">
+                                <div class="page">
+                                    <div class="page-content">
+                                        <p>Preview will appear here...</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="exportModalBackdrop" class="export-modal-backdrop" hidden>
+        <div class="export-modal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
+            <div class="export-modal-header">
+                <h2 id="exportModalTitle">Export PDF</h2>
+                <button id="exportModalCloseBtn" class="export-close-btn" type="button" aria-label="Close export dialog" title="Close export dialog">&times;</button>
+            </div>
+
+            <p id="exportModalSummary" class="export-modal-summary">
+                Choose what to export, then start. Progress updates will appear below while files are processed.
+            </p>
+
+            <fieldset class="export-scope-group">
+                <legend>Export scope</legend>
+                <label class="export-scope-option">
+                    <input id="exportScopeCurrent" type="radio" name="exportScope" value="current" checked>
+                    <span id="exportScopeCurrentLabel">Current file</span>
+                </label>
+                <label class="export-scope-option">
+                    <input id="exportScopeAll" type="radio" name="exportScope" value="all">
+                    <span id="exportScopeAllLabel">All open files</span>
+                </label>
+            </fieldset>
+
+            <div class="export-progress-panel" aria-live="polite">
+                <div class="export-progress-head">
+                    <span id="exportProgressText">Ready to export</span>
+                    <span id="exportProgressCount">0 / 0</span>
+                </div>
+                <div class="export-progress-track">
+                    <div id="exportProgressBar" class="export-progress-bar"></div>
+                </div>
+            </div>
+
+            <div id="exportLog" class="export-log" role="status" aria-live="polite"></div>
+
+            <div class="export-modal-actions">
+                <button id="exportStartBtn" type="button">Start Export</button>
+                <button id="exportCancelBtn" type="button" disabled>Cancel</button>
+                <button id="exportDismissBtn" type="button">Close</button>
             </div>
         </div>
     </div>
