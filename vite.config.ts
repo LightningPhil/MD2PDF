@@ -877,6 +877,7 @@ function createExportApiPlugin(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [createExportApiPlugin()],
   server: {
     port: 3000,
