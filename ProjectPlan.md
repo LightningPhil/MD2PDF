@@ -34,6 +34,8 @@ The planned MD2PDF scope is complete.
 - [x] A4, Letter, Legal, Tabloid, and A3 page sizes
 - [x] Font size options including 10px and 12px defaults
 - [x] Margin presets with medium (20mm) default
+- [x] Editor to preview focus sync by source line
+- [x] Preview to editor focus sync by source line
 
 ### 2.4 Multi-Document Management
 
@@ -50,6 +52,7 @@ The planned MD2PDF scope is complete.
 - [x] Headless Chromium print-to-PDF pipeline
 - [x] Non-raster PDF output path (no screenshot/canvas flattening)
 - [x] KaTeX HTML mode enforced for export fidelity/searchability goals
+- [x] Single export entry point with modal scope selection
 - [x] Single-file export to PDF with derived filename
 - [x] Multi-file export to PDF set packaged as ZIP
 - [x] Server job API for asynchronous export processing

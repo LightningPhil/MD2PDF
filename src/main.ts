@@ -1,6 +1,7 @@
 import { MarkdownEditor } from './editor.js';
 import { renderMarkdown } from './markdown.js';
 import { PageManager } from './pages.js';
+import 'katex/dist/katex.min.css';
 import {
   UIController,
   type DocumentListItem,
@@ -8,13 +9,6 @@ import {
   type ExportScope,
   type UploadedMarkdownFile,
 } from './ui.js';
-
-// Extend window interface for KaTeX
-declare global {
-  interface Window {
-    katex: unknown;
-  }
-}
 
 interface ManagedDocument {
   id: string;
@@ -86,8 +80,6 @@ class MD2PDFApp {
       this.renderActiveDocument();
       this.recomputeInactivePageCounts();
       this.refreshDocumentList();
-
-      console.log('MD2PDF App initialized successfully');
     } catch (error) {
       console.error('Failed to initialize MD2PDF App:', error);
       this.showError('Failed to initialize application');
@@ -170,14 +162,12 @@ class MD2PDFApp {
       this.renderActiveDocument();
       this.recomputeInactivePageCounts();
       this.refreshDocumentList();
-      console.log(`Math mode changed to: ${mode}`);
     });
 
     this.ui.onSettingsChange(() => {
       this.renderActiveDocument();
       this.recomputeInactivePageCounts();
       this.refreshDocumentList();
-      console.log('Settings changed, re-rendering preview');
     });
   }
 
@@ -821,17 +811,4 @@ if (document.readyState === 'loading') {
   });
 } else {
   new MD2PDFApp();
-}
-
-// Load KaTeX library if not already loaded
-if (typeof window !== 'undefined' && !window.katex) {
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js';
-  script.onload = () => {
-    console.log('KaTeX library loaded');
-  };
-  script.onerror = () => {
-    console.error('Failed to load KaTeX library');
-  };
-  document.head.appendChild(script);
 }

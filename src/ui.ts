@@ -1,4 +1,5 @@
 import { MathRenderMode } from './katex.js';
+import { mmToPx } from './units.js';
 
 export type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
 export type ThemeMode = 'dark' | 'light';
@@ -1122,13 +1123,13 @@ export class UIController {
 
     if (!page) {
       return {
-        width: this.mmToPx(selectedPage.widthMm),
-        height: this.mmToPx(selectedPage.heightMm),
+        width: mmToPx(selectedPage.widthMm),
+        height: mmToPx(selectedPage.heightMm),
       };
     }
 
-    const width = page.offsetWidth || this.mmToPx(selectedPage.widthMm);
-    const height = page.offsetHeight || this.mmToPx(selectedPage.heightMm);
+    const width = page.offsetWidth || mmToPx(selectedPage.widthMm);
+    const height = page.offsetHeight || mmToPx(selectedPage.heightMm);
 
     return {
       width,
@@ -1163,15 +1164,6 @@ export class UIController {
 
   private roundZoom(value: number): number {
     return Math.round(value * 100) / 100;
-  }
-
-  private mmToPx(mm: number): number {
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:absolute;visibility:hidden;width:1mm;height:0;padding:0;margin:0;border:0;';
-    document.body.appendChild(probe);
-    const pxPerMm = probe.getBoundingClientRect().width || (96 / 25.4);
-    document.body.removeChild(probe);
-    return mm * pxPerMm;
   }
 
   private startDividerDrag(event: PointerEvent): void {

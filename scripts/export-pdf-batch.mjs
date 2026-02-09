@@ -290,9 +290,8 @@ async function inferOptionsFromPositionals(args, positionals) {
   if (!args['out-dir'] && remaining.length > 0) {
     const last = remaining[remaining.length - 1];
     const looksLikeMarkdown = /\.(md|markdown)$/i.test(last);
-    const exists = await fileExists(last);
 
-    if (!looksLikeMarkdown && !exists) {
+    if (!looksLikeMarkdown) {
       args['out-dir'] = last;
       remaining.pop();
     }

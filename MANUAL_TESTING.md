@@ -1,221 +1,191 @@
 # MD2PDF Manual Testing Guide
 
-This document provides comprehensive manual testing procedures for the MD2PDF application to verify all Phase 1 requirements from ProjectPlan.md.
+This guide verifies the shipped application behavior against the current repository state.
 
-## Prerequisites
+## 1. Prerequisites
 
-1. Start the development server:
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Install Playwright Chromium (for export testing):
+   ```bash
+   npx playwright install chromium
+   ```
+3. Start the app:
    ```bash
    npm run dev
    ```
-2. Open http://localhost:3000 in a browser
+4. Open `http://localhost:3000`.
 
-## Test Scenarios
+## 2. Core UI and Editing
 
-### TS-01: Basic Editor Functionality (REQ-01, REQ-03)
+### TS-01: App shell and defaults
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Load the application | Split-pane UI appears with editor (left) and preview (right) |
-| 2 | Type "# Hello World" in editor | Text appears in editor area |
-| 3 | Wait 1 second | Preview updates automatically showing "Hello World" as heading |
-| 4 | Type additional text | Preview updates live as you type |
-| 5 | Select text and use Tab key | Text is indented with spaces |
+1. Load the app.
+2. Confirm split layout: editor pane left, preview pane right.
+3. Confirm dark app theme by default.
+4. Confirm preview page itself is white.
+5. Confirm default font size is `12px` and default margin is `Medium (20mm)`.
 
-**Pass Criteria**: All steps complete without errors, live preview updates within 1 second.
+Expected:
+- Layout loads without console errors.
+- Theme affects app chrome only, not page content background.
 
----
+### TS-02: Markdown live rendering
 
-### TS-02: Markdown Rendering (REQ-10)
+1. Type heading, paragraph, list, table, and fenced code block content.
+2. Confirm preview updates while typing.
+3. Confirm content paginates into page-sized sheets.
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Enter `# Heading 1` | H1 heading rendered |
-| 2 | Enter `## Heading 2` | H2 heading rendered |
-| 3 | Enter `**bold**` | Bold text rendered |
-| 4 | Enter `*italic*` | Italic text rendered |
-| 5 | Enter `- item` on multiple lines | Unordered list rendered |
-| 6 | Enter `1. item` on multiple lines | Ordered list rendered |
-| 7 | Enter `` `inline code` `` | Inline code styled |
-| 8 | Enter triple backtick code block | Code block with syntax highlighting |
-| 9 | Enter `[link](https://example.com)` | Clickable link rendered |
-| 10 | Enter `> quote text` | Blockquote styled |
-| 11 | Enter `---` | Horizontal rule rendered |
-| 12 | Enter table markdown | Table with borders rendered |
+Expected:
+- Render updates are immediate and stable.
+- Tables/code blocks are not split awkwardly across pages.
 
-**Pass Criteria**: All markdown elements render correctly in preview.
+### TS-03: Math rendering
 
----
+1. Enter inline math: `$E = mc^2$`.
+2. Enter display math with matrix:
+   ```text
+   $$
+   \begin{bmatrix}
+   1 & 2 \\
+   3 & 4
+   \end{bmatrix}
+   $$
+   ```
+3. Toggle math mode button.
 
-### TS-03: KaTeX Math Rendering (REQ-04)
+Expected:
+- Math renders correctly.
+- Matrix row breaks are preserved.
+- Mode toggle re-renders preview without errors.
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Enter `$E = mc^2$` | Inline equation rendered with proper math formatting |
-| 2 | Enter `$$\int_0^1 x dx$$` | Display equation rendered centered, larger |
-| 3 | Enter `$\frac{a}{b}$` | Fraction renders correctly |
-| 4 | Enter `$\sqrt{x}$` | Square root renders correctly |
-| 5 | Enter `$\sum_{i=1}^{n} i$` | Summation renders correctly |
-| 6 | Enter matrix: `$$\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}$$` | Matrix renders correctly |
+## 3. Source Sync and Navigation
 
-**Pass Criteria**: All math expressions render without errors, using proper mathematical typography.
+### TS-04: Editor to preview sync
 
----
+1. Click several lines in the editor.
+2. Observe preview auto-scroll and highlight behavior.
 
-### TS-04: Math Mode Toggle (REQ-05)
+Expected:
+- Preview focuses the corresponding rendered block.
+- Target highlight is obvious and then fades.
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Enter `$E = mc^2$` | Equation renders in HTML mode (default) |
-| 2 | Click "🧮 Math: HTML" button | Button changes to "🧮 Math: SVG" |
-| 3 | Observe equation | Equation re-renders in SVG format |
-| 4 | Click button again | Button changes back to "🧮 Math: HTML" |
-| 5 | Observe equation | Equation renders in HTML format again |
+### TS-05: Preview to editor sync
 
-**Pass Criteria**: Toggle works, equation visually changes between modes.
+1. Click different rendered blocks in preview.
+2. Observe editor selection, scroll position, and highlight.
 
----
+Expected:
+- Editor jumps to the mapped source line.
+- Caret/selection and visual pulse make the focus location clear.
 
-### TS-05: A4 Page Styling (REQ-02, REQ-09)
+## 4. Multi-file Workflow
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Observe preview pane | Pages appear with A4 proportions |
-| 2 | Check page styling | White background, drop shadow visible |
-| 3 | Check margins | Content has visible margins (not edge-to-edge) |
-| 4 | Check stacking | Multiple pages stack vertically with gaps |
-| 5 | Check page numbers | Page numbers appear at bottom of each page |
+### TS-06: Upload, list, rename, close
 
-**Pass Criteria**: Pages look like printed A4 document sheets.
+1. Upload one file, then upload multiple files.
+2. Confirm file list shows filename (left) and page count (right).
+3. Switch active file from the sidebar.
+4. Rename a file from the list actions.
+5. Close a non-active file, then close the active file.
 
----
+Expected:
+- Multi-file loading works in one action.
+- Active file switches correctly.
+- Rename affects in-app/export name only.
+- Closing files updates active state and preview safely.
 
-### TS-06: Smart Pagination (REQ-08)
+### TS-07: Empty-start behavior
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Enter 20+ paragraphs of text | Content flows across multiple pages |
-| 2 | Enter `## Heading` followed by paragraph | Heading stays with following paragraph |
-| 3 | Enter large table (10+ rows) | Table moves intact to next page OR stays on current (not split) |
-| 4 | Enter `$$` display math equation | Equation not split across pages |
-| 5 | Enter large code block | Code block stays atomic if possible |
+1. Start with no uploaded files and blank editor.
+2. Confirm no forced untitled document exists.
+3. Type content.
 
-**Pass Criteria**: No mid-equation, mid-table, or awkward heading orphans.
+Expected:
+- Untitled document appears only after user content exists.
 
----
+## 5. Preview Controls and Layout
 
-### TS-07: File Upload (REQ-06)
+### TS-08: Zoom and fit modes
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Click "📁 Upload" button | File picker dialog opens |
-| 2 | Select a .md file | File loads into editor |
-| 3 | Observe notification | "Loaded [filename]" toast appears |
-| 4 | Check preview | Content from file renders in preview |
-| 5 | Drag and drop .md file onto app | File loads (alternative method) |
+1. Use `Fit Width`, `Fit Page`, `+`, and `-`.
+2. Verify zoom percentage readout changes correctly.
+3. In default fit-width, confirm page is centered with visible side spacing.
 
-**Pass Criteria**: Files load correctly, editor and preview update.
+Expected:
+- No horizontal scrollbars at default fit-width.
+- Horizontal scroll appears only when manual zoom exceeds fit-width.
 
----
+### TS-09: Pane divider
 
-### TS-08: File Save (REQ-07)
+1. Drag divider left/right.
+2. Verify limits at approximately 20% and 80%.
+3. Verify keyboard resizing with `ArrowLeft`, `ArrowRight`, `Home`, `End`.
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Enter some markdown content | Content appears in editor |
-| 2 | Click "💾 Save" button | Browser download dialog appears |
-| 3 | Save the file | File named "document.md" downloads |
-| 4 | Open downloaded file | Contains exact content from editor |
-| 5 | Check notification | "Saved document.md" toast appears |
+Expected:
+- Divider movement is smooth and bounded.
+- Preview recalculates correctly after resize.
 
-**Pass Criteria**: Downloaded file contains correct markdown content.
+## 6. Export Flow
 
----
+### TS-10: Export modal behavior
 
-### TS-09: Error Handling
+1. Click `Export PDF`.
+2. Confirm modal opens with scope options:
+   - current file
+   - all open files
+3. Start export and observe progress panel and log.
+4. Confirm modal height is stable while logs grow.
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Enter invalid LaTeX: `$\invalid{$` | Error handled gracefully, original text shown |
-| 2 | Upload non-text file | Error message appears (or graceful handling) |
-| 3 | No console errors during normal use | DevTools console is clean |
+Expected:
+- `n / m` tracks completed files, not started files.
+- Status text describes current step accurately.
+- Log area scrolls internally; modal does not grow.
 
-**Pass Criteria**: No uncaught exceptions, user-friendly error handling.
+### TS-11: Current file export
 
----
+1. Choose `Current file`.
+2. Start export.
 
-### TS-10: Performance (Large Document)
+Expected:
+- PDF downloads automatically (no print dialog).
+- Filename is derived from selected markdown filename.
+- Progress and completion notifications are accurate.
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Load samples/sample.md | File loads within 2 seconds |
-| 2 | Type in editor | Response feels immediate (<500ms) |
-| 3 | Scroll through pages | Smooth scrolling, no lag |
-| 4 | Toggle math mode | Switch happens within 1 second |
+### TS-12: All files export
 
-**Pass Criteria**: Application remains responsive with typical documents.
+1. Open at least two markdown files.
+2. Choose `All open files`.
+3. Start export.
 
----
+Expected:
+- ZIP downloads automatically.
+- ZIP contains one PDF per open file.
+- Names follow current in-app markdown filenames.
 
-## Sample Test Content
+### TS-13: Export cancel
 
-Use this content to exercise multiple features:
+1. Start a multi-file export.
+2. Click `Cancel`.
 
-```markdown
-# Mathematics Showcase
+Expected:
+- UI reports cancel requested.
+- Current in-flight file can finish, then job stops.
+- Final state is `canceled` with clear summary.
 
-Inline math: $E = mc^2$
+## 7. Regression Checks
 
-Display math:
-$$\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}$$
+1. `npm run typecheck`
+2. `npm test -- --run`
+3. `npm run build`
 
-## Table
+Expected:
+- All checks pass.
 
-| Feature | Status |
-|---------|--------|
-| Editor | ✓ |
-| Preview | ✓ |
+## 8. Execution Log Template
 
-## Code
-
-```javascript
-console.log("Hello, world!");
-```
-
-## List
-- Item one
-- Item two
-  - Nested item
-```
-
----
-
-## Definition of Done Checklist (from ProjectPlan.md Section 12)
-
-- [ ] Markdown edits live-update preview
-- [ ] Pages look like A4 sheets
-- [ ] Equations render correctly
-- [ ] No accidental half-equation page breaks
-- [ ] Tables move intact
-- [ ] User can upload and save Markdown
-- [ ] SVG/HTML KaTeX modes can be toggled
-
----
-
-## Test Execution Log
-
-| Date | Tester | Browser | TS-01 | TS-02 | TS-03 | TS-04 | TS-05 | TS-06 | TS-07 | TS-08 | TS-09 | TS-10 | Notes |
-|------|--------|---------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|
-| | | | | | | | | | | | | | |
-
----
-
-## Reporting Issues
-
-If a test fails, document:
-1. Test scenario ID (e.g., TS-03)
-2. Step number where failure occurred
-3. Expected vs actual behavior
-4. Browser and version
-5. Console errors (if any)
-6. Screenshot (if applicable)
+| Date | Tester | Browser | TS-01 | TS-02 | TS-03 | TS-04 | TS-05 | TS-06 | TS-07 | TS-08 | TS-09 | TS-10 | TS-11 | TS-12 | TS-13 | Notes |
+|------|--------|---------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|
+|      |        |         |       |       |       |       |       |       |       |       |       |       |       |       |       |       |

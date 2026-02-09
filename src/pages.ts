@@ -1,9 +1,9 @@
 import { paginate } from './paginator.js';
 import { renderMath, MathRenderMode } from './katex.js';
+import { mmToPx } from './units.js';
 
 const DEFAULT_PAGE_HEIGHT_MM = 297;
 const DEFAULT_MARGIN_MM = 20;
-const FALLBACK_PX_PER_MM = 96 / 25.4;
 
 export class PageManager {
   private container: HTMLElement;
@@ -134,7 +134,7 @@ export class PageManager {
     const pageHeightMm = this.getPageHeightMm();
     const marginMm = this.getPageMarginMm();
     const contentHeightMm = Math.max(pageHeightMm - (marginMm * 2), 40);
-    return this.mmToPx(contentHeightMm);
+    return mmToPx(contentHeightMm);
   }
 
   private getPageHeightMm(): number {
@@ -151,20 +151,4 @@ export class PageManager {
     return Number.isFinite(marginMm) ? marginMm : DEFAULT_MARGIN_MM;
   }
 
-  private mmToPx(mm: number): number {
-    const probe = document.createElement('div');
-    probe.style.cssText = `
-      position: absolute;
-      visibility: hidden;
-      width: 1mm;
-      height: 0;
-      padding: 0;
-      margin: 0;
-      border: 0;
-    `;
-    document.body.appendChild(probe);
-    const pxPerMm = probe.getBoundingClientRect().width || FALLBACK_PX_PER_MM;
-    document.body.removeChild(probe);
-    return mm * pxPerMm;
-  }
 }

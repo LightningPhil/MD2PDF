@@ -9,13 +9,15 @@ A web app that loads/edits Markdown and renders it live as paginated paper-style
 - Live preview while typing
 - KaTeX math rendering with HTML/SVG toggle
 - Smart pagination to avoid splitting tables and display equations
+- Bidirectional source sync between editor and rendered preview
 - Page sizes: A4, Letter, Legal, Tabloid, A3
 - Preview controls: fit width, fit page, zoom in/out, zoom percentage
 - Theme toggle for app chrome (rendered page stays white)
 - Multi-file upload/save and drag-and-drop for `.md`
+- File list actions: select, rename (download name), and close
 - PDF export:
-  - In-app `Export PDF` button (headless API export, no print dialog)
-  - In-app `Export All PDF` button (headless API export to ZIP, no print dialog)
+  - In-app `Export PDF` button with modal scope selection (current file or all files)
+  - Headless API export (no print dialog) with live progress, logs, timing, and cancel
   - Headless CLI export via Playwright/Chromium (no dialog)
   - Batch headless export with optional ZIP packaging
 
@@ -70,8 +72,8 @@ PDF export (CLI):
 3. Use `Upload` to load one or many `.md` files.
 4. Select files from the collapsible left panel.
 5. Use `Save` to download the currently selected Markdown file.
-6. Use `Export PDF` to download the currently selected file as PDF.
-7. Use `Export All PDF` to download all open files as one ZIP of PDFs.
+6. Use `Export PDF`, choose `Current file` or `All open files`, then start export.
+7. Click in markdown to focus preview, or click preview blocks to focus markdown lines.
 8. Use `Math` toggle to switch HTML/SVG render mode.
 
 ## Supported Markdown
@@ -100,7 +102,7 @@ PDF export (CLI):
 
 ## Scope Notes
 
-Current implementation is still progressing through Phase 2. The headless PDF path now exists in-app and via CLI, while advanced packaging details like embedded font workflows are still future work.
+Current planned scope is complete for the existing project plan, including headless single and batch PDF export.
 
 ## Author
 
