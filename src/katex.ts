@@ -72,6 +72,17 @@ export function renderMath(root: HTMLElement, mode: MathRenderMode = 'html'): vo
       if (isDisplay) {
         wrapper.className = 'katex-display';
       }
+
+      if (placeholder.classList.contains('source-line-anchor')) {
+        wrapper.classList.add('source-line-anchor');
+      }
+      if (placeholder.dataset.sourceLineStart) {
+        wrapper.dataset.sourceLineStart = placeholder.dataset.sourceLineStart;
+      }
+      if (placeholder.dataset.sourceLineEnd) {
+        wrapper.dataset.sourceLineEnd = placeholder.dataset.sourceLineEnd;
+      }
+
       wrapper.innerHTML = rendered;
       placeholder.replaceWith(wrapper);
     } catch (error) {

@@ -121,6 +121,10 @@ class MD2PDFApp {
       this.refreshDocumentList();
     });
 
+    this.editor.onCursorLineChange((lineNumber) => {
+      this.focusPreviewForEditorLine(lineNumber);
+    });
+
     this.ui.onFileUpload((files) => {
       this.addUploadedDocuments(files);
     });
@@ -364,6 +368,19 @@ class MD2PDFApp {
       activeFilename: active?.filename ?? 'No active file',
       totalFiles: Math.max(0, this.documents.length),
     };
+  }
+
+  private focusPreviewForEditorLine(lineNumber: number): void {
+    if (this.isSwitchingDocument) {
+      return;
+    }
+
+    const active = this.getActiveDocument();
+    if (!active || !active.content.trim()) {
+      return;
+    }
+
+    this.ui.focusPreviewOnSourceLine(lineNumber);
   }
 
   private getActiveDocument(): ManagedDocument | undefined {

@@ -549,8 +549,9 @@ async function handleAllExport(request: IncomingMessage, response: ServerRespons
 
 async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingRequest: IncomingMessage, basePath: string): Promise<void> {
   job.state = 'running';
-  setJobMessage(job, 'Starting export...');
-  addJobLog(job, `Started export job (${job.mode}).`);
+  setJobMessage(job, 'Initializing export session...');
+  addJobLog(job, `Export job started (${job.mode}).`);
+  addJobLog(job, 'Initializing Chromium export session...');
 
   let session: ExportSession | null = null;
 
@@ -559,6 +560,7 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
     const pageSizeKey = core.normalizePageSizeKey(request.settings.pageSize);
     const appUrl = buildAppUrl(incomingRequest, basePath);
     session = await core.createPdfExportSession({ build: false, appUrl });
+    addJobLog(job, 'Export session ready.');
 
     if (request.mode === 'current') {
       const document = request.document;
@@ -571,8 +573,8 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
         return;
       }
 
-      addJobLog(job, `Rendering ${document.filename}...`);
-      setJobMessage(job, 'Rendering file 1 of 1...');
+      setJobMessage(job, `Generating file 1/1 (0/1 completed): ${document.filename}`);
+      addJobLog(job, `Starting file 1/1: ${document.filename} (0/1 completed).`);
       job.currentFileStartedAt = Date.now();
 
       const result = await session.exportMarkdownToPdf({
@@ -594,8 +596,10 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
       job.currentFileStartedAt = null;
       addJobLog(
         job,
-        `Rendered ${document.filename} in ${formatDuration(fileElapsedMs)} (total ${formatDuration(totalElapsedMs)}).`,
+        `Completed file 1/1: ${document.filename} in ${formatDuration(fileElapsedMs)} (total ${formatDuration(totalElapsedMs)}).`,
       );
+      setJobMessage(job, 'Finalizing single-file artifact...');
+      addJobLog(job, 'Preparing downloadable PDF artifact...');
       markJobCompleted(job, ensurePdfFilename(document.filename), result.pdfBuffer);
       return;
     }
@@ -619,10 +623,18 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
         }
 
         const document = documents[index];
+        const fileNumber = index + 1;
+        const completedBefore = job.processed;
         const pdfName = makeUniqueFilename(ensurePdfFilename(document.filename), usedNames);
 
-        setJobMessage(job, `Rendering file ${index + 1} of ${documents.length}...`);
-        addJobLog(job, `[${index + 1}/${documents.length}] Rendering ${document.filename}...`);
+        setJobMessage(
+          job,
+          `Generating file ${fileNumber}/${documents.length} (${completedBefore}/${documents.length} completed): ${document.filename}`,
+        );
+        addJobLog(
+          job,
+          `Starting file ${fileNumber}/${documents.length}: ${document.filename} (${completedBefore}/${documents.length} completed).`,
+        );
         job.currentFileStartedAt = Date.now();
 
         const result = await session.exportMarkdownToPdf({
@@ -633,16 +645,17 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
           mathMode: request.settings.mathMode,
         });
 
+        setJobMessage(job, `Saving generated PDF for file ${fileNumber}/${documents.length}...`);
         const pdfPath = path.join(exportDir, pdfName);
         await fs.writeFile(pdfPath, result.pdfBuffer);
 
-        job.processed = index + 1;
+        job.processed = fileNumber;
         const fileElapsedMs = job.currentFileStartedAt ? Date.now() - job.currentFileStartedAt : 0;
         const totalElapsedMs = Date.now() - job.startedAt;
         job.currentFileStartedAt = null;
         addJobLog(
           job,
-          `[${index + 1}/${documents.length}] Rendered ${pdfName} in ${formatDuration(fileElapsedMs)} (total ${formatDuration(totalElapsedMs)}).`,
+          `Completed file ${fileNumber}/${documents.length}: ${pdfName} in ${formatDuration(fileElapsedMs)} (total ${formatDuration(totalElapsedMs)}).`,
         );
       }
 
@@ -653,11 +666,12 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
 
       const zipFilename = ensureZipFilename(request.zipFilename || 'md2pdf-export.zip');
       const zipPath = path.join(tempRoot, zipFilename);
-      setJobMessage(job, 'Creating ZIP archive...');
+      setJobMessage(job, `Creating ZIP archive (${job.processed}/${documents.length} files completed)...`);
       addJobLog(job, `Creating ZIP archive after ${formatDuration(Date.now() - job.startedAt)}...`);
 
       await createZipFromDir(exportDir, zipPath);
       const zipBuffer = await fs.readFile(zipPath);
+      addJobLog(job, `ZIP archive generated: ${zipFilename}.`);
 
       if (job.cancelRequested) {
         markJobCanceled(job);

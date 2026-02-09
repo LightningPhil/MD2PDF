@@ -14,6 +14,11 @@ interface MathToken extends Tokens.Generic {
   text: string;
 }
 
+interface SourceLineRange {
+  startLine: number;
+  endLine: number;
+}
+
 let markedConfigured = false;
 
 function createMathToken(type: 'mathDisplay' | 'mathInline', raw: string, text: string): MathToken {
@@ -105,12 +110,119 @@ function ensureMarkedConfigured(): void {
 export function renderMarkdown(markdown: string, _options: MarkdownOptions = { mathMode: { type: 'html' } }): HTMLElement {
   ensureMarkedConfigured();
 
-  // Convert markdown to HTML
-  const html = marked(markdown) as string;
-  
-  // Create container element
   const container = document.createElement('div');
-  container.innerHTML = html;
-  
+  const tokens = marked.lexer(markdown) as Tokens.Generic[];
+
+  let searchCursor = 0;
+  let lineCursor = 1;
+
+  tokens.forEach((token) => {
+    const range = resolveSourceLineRange(markdown, token.raw ?? '', searchCursor, lineCursor);
+    searchCursor = range.nextSearchCursor;
+    lineCursor = range.nextLineCursor;
+
+    if (token.type === 'space') {
+      return;
+    }
+
+    const html = marked.parser([token]) as string;
+    appendTokenHtml(container, html, {
+      startLine: range.startLine,
+      endLine: range.endLine,
+    });
+  });
+
   return container;
+}
+
+function resolveSourceLineRange(
+  markdown: string,
+  raw: string,
+  searchCursor: number,
+  lineCursor: number,
+): {
+  startLine: number;
+  endLine: number;
+  nextSearchCursor: number;
+  nextLineCursor: number;
+} {
+  if (!raw) {
+    return {
+      startLine: lineCursor,
+      endLine: lineCursor,
+      nextSearchCursor: searchCursor,
+      nextLineCursor: lineCursor,
+    };
+  }
+
+  let matchedIndex = markdown.indexOf(raw, searchCursor);
+  if (matchedIndex < 0) {
+    matchedIndex = searchCursor;
+  }
+
+  const skippedText = markdown.slice(searchCursor, matchedIndex);
+  const startLine = lineCursor + countLineBreaks(skippedText);
+  const endLine = startLine + countLineBreaks(raw);
+
+  return {
+    startLine,
+    endLine: Math.max(startLine, endLine),
+    nextSearchCursor: Math.max(searchCursor, matchedIndex + raw.length),
+    nextLineCursor: Math.max(startLine, endLine),
+  };
+}
+
+function appendTokenHtml(container: HTMLElement, html: string, range: SourceLineRange): void {
+  if (!html.trim()) {
+    return;
+  }
+
+  const chunkContainer = document.createElement('div');
+  chunkContainer.innerHTML = html;
+
+  const nodes = Array.from(chunkContainer.childNodes);
+  if (nodes.length === 0) {
+    return;
+  }
+
+  nodes.forEach((node) => {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as HTMLElement;
+      annotateSourceLineRange(element, range);
+      container.appendChild(element);
+      return;
+    }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? '';
+      if (!text.trim()) {
+        container.appendChild(node);
+        return;
+      }
+
+      const wrapper = document.createElement('span');
+      wrapper.textContent = text;
+      annotateSourceLineRange(wrapper, range);
+      container.appendChild(wrapper);
+      return;
+    }
+
+    container.appendChild(node);
+  });
+}
+
+function annotateSourceLineRange(element: HTMLElement, range: SourceLineRange): void {
+  element.dataset.sourceLineStart = String(range.startLine);
+  element.dataset.sourceLineEnd = String(range.endLine);
+  element.classList.add('source-line-anchor');
+}
+
+function countLineBreaks(text: string): number {
+  let count = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n') {
+      count += 1;
+    }
+  }
+  return count;
 }

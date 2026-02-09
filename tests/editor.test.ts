@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { MarkdownEditor } from '../src/editor'
 
 describe('MarkdownEditor', () => {
@@ -103,7 +103,34 @@ describe('MarkdownEditor', () => {
     editor.setContent('Second change')
     expect(callCount).toBe(1) // Should not increase
   })
-})
 
-// Add afterEach import
-import { afterEach } from 'vitest'
+  it('onCursorLineChange reports the current line on click', () => {
+    const editor = new MarkdownEditor('testEditor')
+    textarea.value = 'Line 1\nLine 2\nLine 3'
+    textarea.selectionStart = 8
+    textarea.selectionEnd = 8
+
+    let reportedLine = 0
+    editor.onCursorLineChange((lineNumber) => {
+      reportedLine = lineNumber
+    })
+
+    textarea.dispatchEvent(new Event('click'))
+    expect(reportedLine).toBe(2)
+  })
+
+  it('onCursorLineChange reacts to navigation keyup events', () => {
+    const editor = new MarkdownEditor('testEditor')
+    textarea.value = 'Line 1\nLine 2\nLine 3'
+    textarea.selectionStart = textarea.value.length
+    textarea.selectionEnd = textarea.value.length
+
+    let reportedLine = 0
+    editor.onCursorLineChange((lineNumber) => {
+      reportedLine = lineNumber
+    })
+
+    textarea.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp' }))
+    expect(reportedLine).toBe(3)
+  })
+})

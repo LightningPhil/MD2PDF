@@ -143,4 +143,30 @@ code block
     expect(result.querySelector('ul')).toBeTruthy()
     expect(result.querySelector('pre')).toBeTruthy()
   })
+
+  it('attaches source line metadata to rendered blocks', () => {
+    const md = `# Heading
+
+Paragraph line one
+Paragraph line two
+
+## Next`
+
+    const result = renderMarkdown(md)
+    const heading = result.querySelector('h1') as HTMLElement
+    const paragraph = result.querySelector('p') as HTMLElement
+    const nextHeading = result.querySelector('h2') as HTMLElement
+
+    expect(heading?.dataset.sourceLineStart).toBeTruthy()
+    expect(paragraph?.dataset.sourceLineStart).toBeTruthy()
+    expect(nextHeading?.dataset.sourceLineStart).toBeTruthy()
+
+    const paragraphStart = Number.parseInt(paragraph.dataset.sourceLineStart || '0', 10)
+    const paragraphEnd = Number.parseInt(paragraph.dataset.sourceLineEnd || '0', 10)
+    expect(paragraphStart).toBeGreaterThanOrEqual(3)
+    expect(paragraphEnd).toBeGreaterThanOrEqual(paragraphStart)
+
+    const nextHeadingStart = Number.parseInt(nextHeading.dataset.sourceLineStart || '0', 10)
+    expect(nextHeadingStart).toBeGreaterThan(paragraphStart)
+  })
 })

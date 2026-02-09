@@ -1,6 +1,7 @@
 export class MarkdownEditor {
   private textarea: HTMLTextAreaElement;
   private changeCallbacks: ((content: string) => void)[] = [];
+  private cursorLineCallbacks: ((lineNumber: number) => void)[] = [];
   
   constructor(textareaId: string) {
     const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -33,6 +34,13 @@ export class MarkdownEditor {
    */
   onChange(callback: (content: string) => void): void {
     this.changeCallbacks.push(callback);
+  }
+
+  /**
+   * Adds a callback that will be called when the active cursor line changes.
+   */
+  onCursorLineChange(callback: (lineNumber: number) => void): void {
+    this.cursorLineCallbacks.push(callback);
   }
   
   /**
@@ -132,6 +140,24 @@ export class MarkdownEditor {
         this.insertText('  '); // Insert two spaces
       }
     });
+
+    this.textarea.addEventListener('click', () => {
+      this.notifyCursorLineChange();
+    });
+
+    this.textarea.addEventListener('mouseup', () => {
+      this.notifyCursorLineChange();
+    });
+
+    this.textarea.addEventListener('select', () => {
+      this.notifyCursorLineChange();
+    });
+
+    this.textarea.addEventListener('keyup', (event) => {
+      if (isNavigationKey(event.key)) {
+        this.notifyCursorLineChange();
+      }
+    });
     
     // Auto-resize textarea (optional)
     this.textarea.addEventListener('input', () => {
@@ -160,4 +186,35 @@ export class MarkdownEditor {
       }
     });
   }
+
+  /**
+   * Notifies cursor-line listeners with the current caret line.
+   */
+  private notifyCursorLineChange(): void {
+    const lineNumber = this.getCurrentLineNumber();
+    this.cursorLineCallbacks.forEach((callback) => {
+      try {
+        callback(lineNumber);
+      } catch (error) {
+        console.error('Error in cursor line callback:', error);
+      }
+    });
+  }
+
+  private getCurrentLineNumber(): number {
+    const cursorPosition = this.textarea.selectionStart ?? 0;
+    const prefix = this.textarea.value.slice(0, cursorPosition);
+    return prefix.split('\n').length;
+  }
+}
+
+function isNavigationKey(key: string): boolean {
+  return key === 'ArrowUp'
+    || key === 'ArrowDown'
+    || key === 'ArrowLeft'
+    || key === 'ArrowRight'
+    || key === 'PageUp'
+    || key === 'PageDown'
+    || key === 'Home'
+    || key === 'End';
 }

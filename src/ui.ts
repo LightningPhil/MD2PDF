@@ -103,6 +103,11 @@ export class UIController {
   private readonly maxZoom = 3;
   private readonly zoomStep = 0.1;
   private readonly previewSideGapPx = 24;
+  private readonly previewFocusTopOffsetPx = 92;
+  private readonly previewFocusSidePaddingPx = 26;
+  private previewFocusTarget: HTMLElement | null = null;
+  private previewFocusPage: HTMLElement | null = null;
+  private previewFocusResetTimer: number | null = null;
 
   private readonly minSplitPercent = 20;
   private readonly maxSplitPercent = 80;
@@ -305,6 +310,25 @@ export class UIController {
     }
 
     this.applyPreviewZoom();
+  }
+
+  /**
+   * Scrolls preview to the closest rendered block for a given markdown line.
+   * Returns true when a matching block was found.
+   */
+  focusPreviewOnSourceLine(lineNumber: number): boolean {
+    if (!Number.isFinite(lineNumber) || lineNumber < 1) {
+      return false;
+    }
+
+    const target = this.findBestSourceLineTarget(Math.floor(lineNumber));
+    if (!target) {
+      return false;
+    }
+
+    this.scrollPreviewToTarget(target);
+    this.highlightPreviewTarget(target);
+    return true;
   }
 
   renderDocumentList(items: DocumentListItem[]): void {
@@ -796,6 +820,136 @@ export class UIController {
 
   private getSelectedExportScope(): ExportScope {
     return this.exportScopeAll.checked ? 'all' : 'current';
+  }
+
+  private findBestSourceLineTarget(lineNumber: number): HTMLElement | null {
+    const anchors = this.previewContainer.querySelectorAll<HTMLElement>('.source-line-anchor[data-source-line-start]');
+    if (anchors.length === 0) {
+      return null;
+    }
+
+    let bestTarget: HTMLElement | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestRangeSize = Number.POSITIVE_INFINITY;
+    let hasExactMatch = false;
+
+    anchors.forEach((anchor) => {
+      const range = this.readSourceLineRange(anchor);
+      if (!range) {
+        return;
+      }
+
+      const isExactMatch = lineNumber >= range.start && lineNumber <= range.end;
+      const distance = isExactMatch
+        ? 0
+        : lineNumber < range.start
+          ? range.start - lineNumber
+          : lineNumber - range.end;
+      const rangeSize = Math.max(0, range.end - range.start);
+
+      if (isExactMatch && !hasExactMatch) {
+        hasExactMatch = true;
+        bestTarget = anchor;
+        bestDistance = distance;
+        bestRangeSize = rangeSize;
+        return;
+      }
+
+      if (isExactMatch && hasExactMatch) {
+        if (rangeSize < bestRangeSize) {
+          bestTarget = anchor;
+          bestRangeSize = rangeSize;
+        }
+        return;
+      }
+
+      if (!hasExactMatch && (distance < bestDistance || (distance === bestDistance && rangeSize < bestRangeSize))) {
+        bestTarget = anchor;
+        bestDistance = distance;
+        bestRangeSize = rangeSize;
+      }
+    });
+
+    return bestTarget;
+  }
+
+  private readSourceLineRange(element: HTMLElement): { start: number; end: number } | null {
+    const start = Number.parseInt(element.dataset.sourceLineStart || '', 10);
+    if (!Number.isFinite(start) || start < 1) {
+      return null;
+    }
+
+    const rawEnd = Number.parseInt(element.dataset.sourceLineEnd || '', 10);
+    const end = Number.isFinite(rawEnd) && rawEnd >= start ? rawEnd : start;
+
+    return { start, end };
+  }
+
+  private scrollPreviewToTarget(target: HTMLElement): void {
+    const viewportRect = this.previewViewport.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+
+    const desiredTop = viewportRect.top + this.previewFocusTopOffsetPx;
+    const deltaY = targetRect.top - desiredTop;
+    const nextTop = Math.max(0, this.previewViewport.scrollTop + deltaY);
+
+    const leftGuide = viewportRect.left + this.previewFocusSidePaddingPx;
+    const rightGuide = viewportRect.right - this.previewFocusSidePaddingPx;
+    let deltaX = 0;
+
+    if (targetRect.left < leftGuide) {
+      deltaX = targetRect.left - leftGuide;
+    } else if (targetRect.right > rightGuide) {
+      deltaX = targetRect.right - rightGuide;
+    }
+
+    const nextLeft = Math.max(0, this.previewViewport.scrollLeft + deltaX);
+
+    this.previewViewport.scrollTo({
+      top: nextTop,
+      left: nextLeft,
+      behavior: 'smooth',
+    });
+  }
+
+  private highlightPreviewTarget(target: HTMLElement): void {
+    if (this.previewFocusTarget) {
+      this.previewFocusTarget.classList.remove('preview-line-focus');
+    }
+    if (this.previewFocusPage) {
+      this.previewFocusPage.classList.remove('preview-page-focus');
+    }
+
+    // Restart animation when selecting the same element repeatedly.
+    target.classList.remove('preview-line-focus');
+    void target.offsetWidth;
+    target.classList.add('preview-line-focus');
+
+    const page = target.closest('.page') as HTMLElement | null;
+    if (page) {
+      page.classList.remove('preview-page-focus');
+      void page.offsetWidth;
+      page.classList.add('preview-page-focus');
+    }
+
+    this.previewFocusTarget = target;
+    this.previewFocusPage = page;
+
+    if (this.previewFocusResetTimer !== null) {
+      window.clearTimeout(this.previewFocusResetTimer);
+    }
+
+    this.previewFocusResetTimer = window.setTimeout(() => {
+      if (this.previewFocusTarget) {
+        this.previewFocusTarget.classList.remove('preview-line-focus');
+      }
+      if (this.previewFocusPage) {
+        this.previewFocusPage.classList.remove('preview-page-focus');
+      }
+      this.previewFocusTarget = null;
+      this.previewFocusPage = null;
+      this.previewFocusResetTimer = null;
+    }, 1800);
   }
 
   private getViewportPaddingPx(): { left: number; right: number; top: number; bottom: number } {
