@@ -130,6 +130,7 @@ export class UIController {
   private documentSelectCallback?: (documentId: string) => void;
   private documentRenameCallback?: (documentId: string, nextFilename: string) => void;
   private documentCloseCallback?: (documentId: string) => void;
+  private previewSourceLineSelectCallback?: (lineNumber: number) => void;
   private mathModeChangeCallback?: (mode: MathRenderMode) => void;
   private settingsChangeCallback?: () => void;
 
@@ -241,6 +242,10 @@ export class UIController {
 
   onDocumentClose(callback: (documentId: string) => void): void {
     this.documentCloseCallback = callback;
+  }
+
+  onPreviewSourceLineSelect(callback: (lineNumber: number) => void): void {
+    this.previewSourceLineSelectCallback = callback;
   }
 
   /**
@@ -698,6 +703,10 @@ export class UIController {
       this.applyPreviewZoom();
     }, { passive: false });
 
+    this.previewContainer.addEventListener('click', (event) => {
+      this.handlePreviewSourceClick(event);
+    });
+
     this.paneDivider.addEventListener('pointerdown', (event) => {
       this.startDividerDrag(event);
     });
@@ -820,6 +829,88 @@ export class UIController {
 
   private getSelectedExportScope(): ExportScope {
     return this.exportScopeAll.checked ? 'all' : 'current';
+  }
+
+  private handlePreviewSourceClick(event: MouseEvent): void {
+    const clickedElement = this.toElement(event.target);
+    if (!clickedElement) {
+      return;
+    }
+
+    const anchor = this.findClickedSourceAnchor(clickedElement, event.clientY);
+    if (!anchor) {
+      return;
+    }
+
+    const lineNumber = this.estimateLineNumberFromAnchor(anchor, event.clientY);
+    this.highlightPreviewTarget(anchor);
+    this.previewSourceLineSelectCallback?.(lineNumber);
+  }
+
+  private findClickedSourceAnchor(clickedElement: HTMLElement, clickY: number): HTMLElement | null {
+    const directAnchor = clickedElement.closest('.source-line-anchor') as HTMLElement | null;
+    if (directAnchor) {
+      return directAnchor;
+    }
+
+    const page = clickedElement.closest('.page') as HTMLElement | null;
+    if (!page) {
+      return null;
+    }
+
+    const anchors = Array.from(page.querySelectorAll<HTMLElement>('.source-line-anchor[data-source-line-start]'));
+    if (anchors.length === 0) {
+      return null;
+    }
+
+    let bestAnchor: HTMLElement | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    anchors.forEach((anchor) => {
+      const rect = anchor.getBoundingClientRect();
+      const distance = clickY < rect.top
+        ? rect.top - clickY
+        : clickY > rect.bottom
+          ? clickY - rect.bottom
+          : 0;
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestAnchor = anchor;
+      }
+    });
+
+    return bestAnchor;
+  }
+
+  private estimateLineNumberFromAnchor(anchor: HTMLElement, clickY: number): number {
+    const range = this.readSourceLineRange(anchor);
+    if (!range) {
+      return 1;
+    }
+
+    if (range.end <= range.start) {
+      return range.start;
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    const height = Math.max(1, rect.height);
+    const relativeY = this.clamp((clickY - rect.top) / height, 0, 0.9999);
+    const span = (range.end - range.start) + 1;
+    const lineOffset = Math.floor(relativeY * span);
+    return range.start + lineOffset;
+  }
+
+  private toElement(target: EventTarget | null): HTMLElement | null {
+    if (target instanceof HTMLElement) {
+      return target;
+    }
+
+    if (target instanceof Text) {
+      return target.parentElement;
+    }
+
+    return null;
   }
 
   private findBestSourceLineTarget(lineNumber: number): HTMLElement | null {

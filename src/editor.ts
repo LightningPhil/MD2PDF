@@ -2,6 +2,7 @@ export class MarkdownEditor {
   private textarea: HTMLTextAreaElement;
   private changeCallbacks: ((content: string) => void)[] = [];
   private cursorLineCallbacks: ((lineNumber: number) => void)[] = [];
+  private focusPulseTimer: number | null = null;
   
   constructor(textareaId: string) {
     const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -67,6 +68,28 @@ export class MarkdownEditor {
   clear(): void {
     this.textarea.value = '';
     this.notifyChange();
+  }
+
+  /**
+   * Reveals a line in the editor and moves the caret to it.
+   * Returns true if the line existed and was selected.
+   */
+  revealLine(lineNumber: number): boolean {
+    if (!Number.isFinite(lineNumber)) {
+      return false;
+    }
+
+    const resolved = this.resolveLineRange(Math.max(1, Math.floor(lineNumber)));
+    if (!resolved) {
+      return false;
+    }
+
+    this.textarea.focus();
+    this.textarea.setSelectionRange(resolved.start, resolved.end);
+    this.scrollLineIntoView(resolved.lineNumber);
+    this.pulseEditorFocus();
+    this.notifyCursorLineChange();
+    return true;
   }
   
   /**
@@ -205,6 +228,61 @@ export class MarkdownEditor {
     const cursorPosition = this.textarea.selectionStart ?? 0;
     const prefix = this.textarea.value.slice(0, cursorPosition);
     return prefix.split('\n').length;
+  }
+
+  private resolveLineRange(requestedLine: number): { start: number; end: number; lineNumber: number } | null {
+    const text = this.textarea.value;
+    const lineStarts = [0];
+
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] === '\n') {
+        lineStarts.push(index + 1);
+      }
+    }
+
+    if (lineStarts.length === 0) {
+      return null;
+    }
+
+    const maxLine = lineStarts.length;
+    const lineNumber = Math.min(Math.max(requestedLine, 1), maxLine);
+    const start = lineStarts[lineNumber - 1];
+    const nextLineStart = lineNumber < maxLine ? lineStarts[lineNumber] : text.length;
+    const end = Math.max(start, nextLineStart - (lineNumber < maxLine ? 1 : 0));
+
+    return {
+      start,
+      end,
+      lineNumber,
+    };
+  }
+
+  private scrollLineIntoView(lineNumber: number): void {
+    const computed = window.getComputedStyle(this.textarea);
+    const parsedLineHeight = Number.parseFloat(computed.lineHeight);
+    const parsedFontSize = Number.parseFloat(computed.fontSize);
+    const lineHeight = Number.isFinite(parsedLineHeight)
+      ? parsedLineHeight
+      : (Number.isFinite(parsedFontSize) ? parsedFontSize * 1.45 : 20);
+
+    const targetTop = Math.max(0, (lineNumber - 1) * lineHeight);
+    const offsetTop = Math.max(0, targetTop - (this.textarea.clientHeight * 0.35));
+    this.textarea.scrollTop = offsetTop;
+  }
+
+  private pulseEditorFocus(): void {
+    this.textarea.classList.remove('editor-line-focus');
+    void this.textarea.offsetWidth;
+    this.textarea.classList.add('editor-line-focus');
+
+    if (this.focusPulseTimer !== null) {
+      window.clearTimeout(this.focusPulseTimer);
+    }
+
+    this.focusPulseTimer = window.setTimeout(() => {
+      this.textarea.classList.remove('editor-line-focus');
+      this.focusPulseTimer = null;
+    }, 1200);
   }
 }
 

@@ -70,6 +70,7 @@ class MD2PDFApp {
   private documents: ManagedDocument[] = [];
   private activeDocumentId: string | null = null;
   private isSwitchingDocument = false;
+  private suppressNextEditorPreviewSync = false;
   private isExporting = false;
   private activeExportJobId: string | null = null;
   private untitledCounter = 1;
@@ -123,6 +124,10 @@ class MD2PDFApp {
 
     this.editor.onCursorLineChange((lineNumber) => {
       this.focusPreviewForEditorLine(lineNumber);
+    });
+
+    this.ui.onPreviewSourceLineSelect((lineNumber) => {
+      this.focusEditorForPreviewLine(lineNumber);
     });
 
     this.ui.onFileUpload((files) => {
@@ -371,6 +376,11 @@ class MD2PDFApp {
   }
 
   private focusPreviewForEditorLine(lineNumber: number): void {
+    if (this.suppressNextEditorPreviewSync) {
+      this.suppressNextEditorPreviewSync = false;
+      return;
+    }
+
     if (this.isSwitchingDocument) {
       return;
     }
@@ -381,6 +391,24 @@ class MD2PDFApp {
     }
 
     this.ui.focusPreviewOnSourceLine(lineNumber);
+  }
+
+  private focusEditorForPreviewLine(lineNumber: number): void {
+    const active = this.getActiveDocument();
+    if (!active) {
+      return;
+    }
+
+    this.suppressNextEditorPreviewSync = true;
+    const revealed = this.editor.revealLine(lineNumber);
+    if (!revealed) {
+      this.suppressNextEditorPreviewSync = false;
+      return;
+    }
+
+    window.setTimeout(() => {
+      this.suppressNextEditorPreviewSync = false;
+    }, 0);
   }
 
   private getActiveDocument(): ManagedDocument | undefined {

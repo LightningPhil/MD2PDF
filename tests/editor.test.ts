@@ -133,4 +133,25 @@ describe('MarkdownEditor', () => {
     textarea.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp' }))
     expect(reportedLine).toBe(3)
   })
+
+  it('revealLine moves selection to requested line', () => {
+    const editor = new MarkdownEditor('testEditor')
+    textarea.value = 'alpha\nbeta\ngamma'
+
+    const revealed = editor.revealLine(2)
+    expect(revealed).toBe(true)
+    expect(textarea.selectionStart).toBe(6)
+    expect(textarea.selectionEnd).toBe(10)
+    expect(document.activeElement).toBe(textarea)
+  })
+
+  it('revealLine clamps to last line when line is too large', () => {
+    const editor = new MarkdownEditor('testEditor')
+    textarea.value = 'alpha\nbeta\ngamma'
+
+    const revealed = editor.revealLine(99)
+    expect(revealed).toBe(true)
+    expect(textarea.selectionStart).toBe(11)
+    expect(textarea.selectionEnd).toBe(16)
+  })
 })
