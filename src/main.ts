@@ -1,7 +1,6 @@
 import { MarkdownEditor } from './editor.js';
-import { renderMarkdown } from './markdown.js';
 import { PageManager } from './pages.js';
-import 'katex/dist/katex.min.css';
+import type { PageSizeKey } from './typesetter.js';
 import {
   UIController,
   type DocumentListItem,
@@ -17,45 +16,6 @@ interface ManagedDocument {
   pageCount: number;
 }
 
-interface ExportPayloadBase {
-  pageSize: string;
-  fontSizePx: number;
-  marginMm: number;
-  mathMode: 'html' | 'svg';
-}
-
-interface ExportDocumentPayload {
-  filename: string;
-  content: string;
-}
-
-interface ExportJobStartPayload extends ExportPayloadBase {
-  mode: ExportScope;
-  document?: ExportDocumentPayload;
-  documents?: ExportDocumentPayload[];
-  zipFilename?: string;
-}
-
-interface ExportJobStartResponse {
-  jobId: string;
-}
-
-interface ExportJobStatusResponse {
-  jobId: string;
-  state: 'queued' | 'running' | 'completed' | 'failed' | 'canceled';
-  processed: number;
-  total: number;
-  message: string;
-  artifactName: string | null;
-  nextCursor: number;
-  logEntries: string[];
-  error: string | null;
-  elapsedMs: number;
-  currentFileElapsedMs: number;
-}
-
-class ExportCanceledError extends Error {}
-
 class MD2PDFApp {
   private editor!: MarkdownEditor;
   private pageManager!: PageManager;
@@ -64,9 +24,7 @@ class MD2PDFApp {
   private documents: ManagedDocument[] = [];
   private activeDocumentId: string | null = null;
   private isSwitchingDocument = false;
-  private suppressNextEditorPreviewSync = false;
   private isExporting = false;
-  private activeExportJobId: string | null = null;
   private untitledCounter = 1;
 
   constructor() {
@@ -78,17 +36,17 @@ class MD2PDFApp {
       this.initializeDocuments();
       this.setupEventHandlers();
       this.renderActiveDocument();
-      this.recomputeInactivePageCounts();
+      void this.recomputeInactivePageCounts();
       this.refreshDocumentList();
+      
+      // PDF export is always available now (client-side)
+      this.ui.updateExportAvailability(true);
     } catch (error) {
       console.error('Failed to initialize MD2PDF App:', error);
       this.showError('Failed to initialize application');
     }
   }
 
-  /**
-   * Sets up event handlers between components
-   */
   private setupEventHandlers(): void {
     this.editor.onChange((content) => {
       if (this.isSwitchingDocument) {
@@ -103,7 +61,7 @@ class MD2PDFApp {
       }
 
       if (!active) {
-        this.pageManager.updatePages(document.createElement('div'));
+        void this.pageManager.updateMarkdown('');
         this.ui.refreshPreviewViewport();
         this.refreshDocumentList();
         return;
@@ -112,14 +70,6 @@ class MD2PDFApp {
       active.content = content;
       this.renderActiveDocument();
       this.refreshDocumentList();
-    });
-
-    this.editor.onCursorLineChange((lineNumber) => {
-      this.focusPreviewForEditorLine(lineNumber);
-    });
-
-    this.ui.onPreviewSourceLineSelect((lineNumber) => {
-      this.focusEditorForPreviewLine(lineNumber);
     });
 
     this.ui.onFileUpload((files) => {
@@ -154,21 +104,30 @@ class MD2PDFApp {
     });
 
     this.ui.onExportCancel(() => {
-      void this.cancelActiveExport();
+      // Client-side export is fast, no cancel needed
     });
 
-    this.ui.onMathModeChange((mode) => {
-      this.pageManager.setMathMode(mode);
-      this.renderActiveDocument();
-      this.recomputeInactivePageCounts();
-      this.refreshDocumentList();
+    // Math mode is now handled by typesetter, no separate toggle needed
+    this.ui.onMathModeChange(() => {
+      // No-op - typesetter handles math natively
     });
 
     this.ui.onSettingsChange(() => {
+      this.applySettings();
       this.renderActiveDocument();
-      this.recomputeInactivePageCounts();
+      void this.recomputeInactivePageCounts();
       this.refreshDocumentList();
     });
+  }
+
+  private applySettings(): void {
+    const pageSize = this.ui.getPageSize() as PageSizeKey;
+    const fontSizePx = this.ui.getFontSize();
+    const marginMm = this.ui.getMargin();
+
+    this.pageManager.setPageSize(pageSize);
+    this.pageManager.setFontSize(fontSizePx);
+    this.pageManager.setMargin(marginMm);
   }
 
   private initializeDocuments(): void {
@@ -201,7 +160,7 @@ class MD2PDFApp {
 
     if (addedDocuments.length > 0) {
       this.switchActiveDocument(addedDocuments[0].id, true);
-      this.recomputeInactivePageCounts();
+      void this.recomputeInactivePageCounts();
       this.refreshDocumentList();
     }
   }
@@ -250,7 +209,7 @@ class MD2PDFApp {
   }
 
   private closeDocument(documentId: string): void {
-    const closingIndex = this.documents.findIndex((documentItem) => documentItem.id === documentId);
+    const closingIndex = this.documents.findIndex((doc) => doc.id === documentId);
     if (closingIndex < 0) {
       return;
     }
@@ -269,7 +228,7 @@ class MD2PDFApp {
       this.editor.setContent('');
       this.isSwitchingDocument = false;
 
-      this.pageManager.updatePages(document.createElement('div'));
+      void this.pageManager.updateMarkdown('');
       this.ui.refreshPreviewViewport();
       this.refreshDocumentList();
       this.ui.showNotification(`Closed ${closingDocument.filename}`, 'info');
@@ -292,66 +251,41 @@ class MD2PDFApp {
     this.ui.showNotification(`Closed ${closingDocument.filename}`, 'info');
   }
 
-  /**
-   * Renders the active document in the preview pane and updates page count.
-   */
   private renderActiveDocument(): void {
-    try {
-      const active = this.getActiveDocument();
-      if (!active) {
-        this.pageManager.updatePages(document.createElement('div'));
-        this.ui.refreshPreviewViewport();
-        return;
-      }
+    const active = this.getActiveDocument();
+    if (!active) {
+      void this.pageManager.updateMarkdown('');
+      this.ui.refreshPreviewViewport();
+      return;
+    }
 
-      const markdown = active.content;
-      if (!markdown.trim()) {
-        this.pageManager.updatePages(document.createElement('div'));
-        active.pageCount = this.pageManager.getPageCount();
-        this.ui.refreshPreviewViewport();
-        return;
-      }
-
-      const mathMode = this.pageManager.getMathMode();
-      const htmlContent = renderMarkdown(markdown, { mathMode: { type: mathMode } });
-
-      this.pageManager.updatePages(htmlContent);
+    void this.pageManager.updateMarkdown(active.content).then(() => {
       active.pageCount = this.pageManager.getPageCount();
       this.ui.refreshPreviewViewport();
-    } catch (error) {
-      console.error('Error updating preview:', error);
-      this.showError('Failed to update preview');
-    }
-  }
-
-  private recomputeInactivePageCounts(): void {
-    const activeId = this.activeDocumentId;
-
-    this.documents.forEach((documentItem) => {
-      if (documentItem.id === activeId) {
-        return;
-      }
-
-      documentItem.pageCount = this.calculatePageCountForMarkdown(documentItem.content);
+      this.refreshDocumentList();
     });
   }
 
-  private calculatePageCountForMarkdown(markdown: string): number {
-    if (!markdown.trim()) {
-      return 1;
+  private async recomputeInactivePageCounts(): Promise<void> {
+    const activeId = this.activeDocumentId;
+
+    for (const doc of this.documents) {
+      if (doc.id === activeId) {
+        continue;
+      }
+
+      doc.pageCount = await this.pageManager.calculatePageCount(doc.content);
     }
 
-    const mathMode = this.pageManager.getMathMode();
-    const htmlContent = renderMarkdown(markdown, { mathMode: { type: mathMode } });
-    return this.pageManager.calculatePageCount(htmlContent);
+    this.refreshDocumentList();
   }
 
   private refreshDocumentList(): void {
-    const items: DocumentListItem[] = this.documents.map((documentItem) => ({
-      id: documentItem.id,
-      filename: documentItem.filename,
-      pageCount: Math.max(1, documentItem.pageCount),
-      isActive: documentItem.id === this.activeDocumentId,
+    const items: DocumentListItem[] = this.documents.map((doc) => ({
+      id: doc.id,
+      filename: doc.filename,
+      pageCount: Math.max(1, doc.pageCount),
+      isActive: doc.id === this.activeDocumentId,
     }));
 
     this.ui.renderDocumentList(items);
@@ -362,43 +296,8 @@ class MD2PDFApp {
     return {
       activeFilename: active?.filename ?? 'No active file',
       totalFiles: Math.max(0, this.documents.length),
+      isApiAvailable: true, // Always available now
     };
-  }
-
-  private focusPreviewForEditorLine(lineNumber: number): void {
-    if (this.suppressNextEditorPreviewSync) {
-      this.suppressNextEditorPreviewSync = false;
-      return;
-    }
-
-    if (this.isSwitchingDocument) {
-      return;
-    }
-
-    const active = this.getActiveDocument();
-    if (!active || !active.content.trim()) {
-      return;
-    }
-
-    this.ui.focusPreviewOnSourceLine(lineNumber, { suppressPulseIfStable: true });
-  }
-
-  private focusEditorForPreviewLine(lineNumber: number): void {
-    const active = this.getActiveDocument();
-    if (!active) {
-      return;
-    }
-
-    this.suppressNextEditorPreviewSync = true;
-    const revealed = this.editor.revealLine(lineNumber);
-    if (!revealed) {
-      this.suppressNextEditorPreviewSync = false;
-      return;
-    }
-
-    window.setTimeout(() => {
-      this.suppressNextEditorPreviewSync = false;
-    }, 0);
   }
 
   private getActiveDocument(): ManagedDocument | undefined {
@@ -406,11 +305,11 @@ class MD2PDFApp {
       return undefined;
     }
 
-    return this.documents.find((documentItem) => documentItem.id === this.activeDocumentId);
+    return this.documents.find((doc) => doc.id === this.activeDocumentId);
   }
 
   private getDocumentById(documentId: string): ManagedDocument | undefined {
-    return this.documents.find((documentItem) => documentItem.id === documentId);
+    return this.documents.find((doc) => doc.id === documentId);
   }
 
   private syncActiveDocumentContentFromEditor(): void {
@@ -452,8 +351,8 @@ class MD2PDFApp {
 
     const used = new Set(
       this.documents
-        .filter((documentItem) => documentItem.id !== excludeDocumentId)
-        .map((documentItem) => documentItem.filename.toLowerCase()),
+        .filter((doc) => doc.id !== excludeDocumentId)
+        .map((doc) => doc.filename.toLowerCase()),
     );
     while (used.has(candidate.toLowerCase())) {
       counter += 1;
@@ -483,15 +382,6 @@ class MD2PDFApp {
     return `${stem}.pdf`;
   }
 
-  private getExportPayloadBase(): ExportPayloadBase {
-    return {
-      pageSize: this.ui.getPageSize(),
-      fontSizePx: this.ui.getFontSize(),
-      marginMm: this.ui.getMargin(),
-      mathMode: this.ui.getMathMode(),
-    };
-  }
-
   private async exportDocuments(scope: ExportScope): Promise<void> {
     if (this.isExporting) {
       return;
@@ -505,278 +395,91 @@ class MD2PDFApp {
       return;
     }
 
-    const documents: ExportDocumentPayload[] = scope === 'current'
-      ? [{
-        filename: active?.filename ?? 'document.md',
-        content: active?.content ?? '',
-      }]
-      : this.documents.map((documentItem) => ({
-        filename: documentItem.filename,
-        content: documentItem.content,
-      }));
+    const documentsToExport = scope === 'current'
+      ? [active!]
+      : this.documents;
 
-    if (documents.length === 0) {
+    if (documentsToExport.length === 0) {
       this.showError('No markdown files to export');
       return;
     }
 
-    const totalFiles = scope === 'all' ? documents.length : 1;
-
+    this.isExporting = true;
+    this.ui.setExportBusy(true);
     this.ui.clearExportLog();
-    this.ui.setExportProgress({
-      processed: 0,
-      total: totalFiles,
-      message: 'Preparing export job...',
-    });
-    this.ui.setExportSummary(
-      scope === 'all'
-        ? `Exporting ${documents.length} markdown files to a ZIP archive.`
-        : `Exporting ${documents[0].filename} to PDF.`,
-    );
-    this.ui.appendExportLog('Preparing export job...');
 
-    await this.runExport(async () => {
-      const payload: ExportJobStartPayload = {
-        ...this.getExportPayloadBase(),
-        mode: scope,
-        document: scope === 'current' ? documents[0] : undefined,
-        documents: scope === 'all' ? documents : undefined,
-        zipFilename: scope === 'all' ? 'md2pdf-export.zip' : undefined,
-      };
-
-      const start = await this.postJson<ExportJobStartResponse>('/api/export/job/start', payload);
-      this.activeExportJobId = start.jobId;
-      this.ui.appendExportLog(`Export job started (${start.jobId.slice(0, 8)}).`);
-
-      const finalStatus = await this.pollExportJob(start.jobId, totalFiles);
-      if (finalStatus.state === 'canceled') {
-        this.ui.setExportSummary('Export canceled.');
-        throw new ExportCanceledError('Export canceled.');
-      }
-
-      if (finalStatus.state === 'failed') {
-        const message = finalStatus.error || 'Export failed';
-        this.ui.setExportSummary(`Export failed: ${message}`);
-        throw new Error(message);
-      }
-
-      const artifact = await this.getExportArtifact(start.jobId);
-      const fallbackName = scope === 'all'
-        ? 'md2pdf-export.zip'
-        : this.toPdfFilename(documents[0].filename);
-      const filename = this.extractFilenameFromContentDisposition(artifact.contentDisposition)
-        || finalStatus.artifactName
-        || fallbackName;
-
-      this.downloadBlob(artifact.blob, filename);
-      this.ui.appendExportLog(`Downloaded ${filename}.`);
+    try {
+      const totalFiles = documentsToExport.length;
       this.ui.setExportProgress({
-        processed: Math.max(finalStatus.total, totalFiles),
-        total: Math.max(finalStatus.total, totalFiles, 1),
-        message: `Export complete: ${filename}`,
-        totalElapsedMs: finalStatus.elapsedMs,
-        currentFileElapsedMs: 0,
+        processed: 0,
+        total: totalFiles,
+        message: 'Generating PDF...',
       });
       this.ui.setExportSummary(
         scope === 'all'
-          ? `Finished exporting ${documents.length} files to ${filename}.`
-          : `Finished exporting ${filename}.`,
-      );
-      this.ui.showNotification(
-        scope === 'all'
-          ? `Exported ${documents.length} files to ${filename}`
-          : `Exported ${filename}`,
-        'success',
-      );
-    });
-  }
-
-  private async cancelActiveExport(): Promise<void> {
-    if (!this.isExporting || !this.activeExportJobId) {
-      return;
-    }
-
-    try {
-      await this.postJson('/api/export/job/cancel', { jobId: this.activeExportJobId });
-      this.ui.appendExportLog('Cancel requested. Waiting for current file to finish...');
-      this.ui.setExportSummary('Cancel requested. Finishing current task...');
-    } catch (error) {
-      console.error('Cancel export error:', error);
-      const message = error instanceof Error ? error.message : 'Failed to cancel export';
-      this.showError(message);
-    }
-  }
-
-  private async pollExportJob(jobId: string, fallbackTotal: number): Promise<ExportJobStatusResponse> {
-    let cursor = 0;
-
-    while (true) {
-      const status = await this.getJson<ExportJobStatusResponse>(
-        `/api/export/job/status?jobId=${encodeURIComponent(jobId)}&cursor=${cursor}`,
+          ? `Exporting ${totalFiles} markdown files...`
+          : `Exporting ${documentsToExport[0].filename}...`,
       );
 
-      cursor = status.nextCursor;
-      status.logEntries.forEach((entry) => {
-        this.ui.appendExportLog(entry);
-      });
+      if (scope === 'current') {
+        // Single file export
+        const doc = documentsToExport[0];
+        this.ui.appendExportLog(`Generating PDF for ${doc.filename}...`);
 
-      const total = Math.max(1, status.total || fallbackTotal);
-      const processed = Math.max(0, Math.min(status.processed, total));
-      this.ui.setExportProgress({
-        processed,
-        total,
-        message: status.message || this.describeExportState(status.state),
-        totalElapsedMs: status.elapsedMs,
-        currentFileElapsedMs: status.currentFileElapsedMs,
-      });
+        // Update PageManager with the document content and export
+        await this.pageManager.updateMarkdown(doc.content);
+        const pdfBytes = await this.pageManager.exportPdf(doc.filename);
+        
+        const filename = this.toPdfFilename(doc.filename);
+        this.downloadPdf(pdfBytes, filename);
 
-      if (status.state === 'completed' || status.state === 'failed' || status.state === 'canceled') {
-        return status;
+        this.ui.appendExportLog(`Downloaded ${filename}`);
+        this.ui.setExportProgress({
+          processed: 1,
+          total: 1,
+          message: `Export complete: ${filename}`,
+        });
+        this.ui.setExportSummary(`Finished exporting ${filename}.`);
+        this.ui.showNotification(`Exported ${filename}`, 'success');
+      } else {
+        // Multiple files - generate and download each
+        for (let i = 0; i < documentsToExport.length; i++) {
+          const doc = documentsToExport[i];
+          this.ui.appendExportLog(`Generating PDF for ${doc.filename}...`);
+
+          await this.pageManager.updateMarkdown(doc.content);
+          const pdfBytes = await this.pageManager.exportPdf(doc.filename);
+          
+          const filename = this.toPdfFilename(doc.filename);
+          this.downloadPdf(pdfBytes, filename);
+
+          this.ui.setExportProgress({
+            processed: i + 1,
+            total: totalFiles,
+            message: `Exported ${i + 1} of ${totalFiles}`,
+          });
+          this.ui.appendExportLog(`Downloaded ${filename}`);
+        }
+
+        this.ui.setExportSummary(`Finished exporting ${totalFiles} files.`);
+        this.ui.showNotification(`Exported ${totalFiles} files`, 'success');
       }
-
-      await this.delay(250);
-    }
-  }
-
-  private async runExport(task: () => Promise<void>): Promise<void> {
-    this.isExporting = true;
-    this.ui.setExportBusy(true);
-
-    try {
-      await task();
     } catch (error) {
       console.error('Export error:', error);
       const message = error instanceof Error ? error.message : 'Export failed';
-
-      if (error instanceof ExportCanceledError) {
-        this.ui.setExportSummary(message);
-        this.ui.showNotification(message, 'info');
-      } else {
-        this.ui.setExportSummary(`Export failed: ${message}`);
-        this.showError(message);
-      }
+      this.ui.setExportSummary(`Export failed: ${message}`);
+      this.showError(message);
     } finally {
-      this.activeExportJobId = null;
       this.isExporting = false;
       this.ui.setExportBusy(false);
+      
+      // Re-render active document
+      this.renderActiveDocument();
     }
   }
 
-  private describeExportState(state: ExportJobStatusResponse['state']): string {
-    if (state === 'queued') {
-      return 'Queued...';
-    }
-    if (state === 'running') {
-      return 'Processing files...';
-    }
-    if (state === 'completed') {
-      return 'Export complete';
-    }
-    if (state === 'canceled') {
-      return 'Export canceled';
-    }
-    return 'Export failed';
-  }
-
-  private async postJson<T = unknown>(url: string, payload: unknown): Promise<T> {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const errorText = await this.readErrorMessage(response);
-      throw new Error(errorText || `Request failed with status ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  }
-
-  private async getJson<T = unknown>(url: string): Promise<T> {
-    const response = await fetch(url, {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      const errorText = await this.readErrorMessage(response);
-      throw new Error(errorText || `Request failed with status ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  }
-
-  private async getExportArtifact(jobId: string): Promise<{ blob: Blob; contentDisposition: string | null }> {
-    const response = await fetch(`/api/export/job/download?jobId=${encodeURIComponent(jobId)}`, {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      const errorText = await this.readErrorMessage(response);
-      throw new Error(errorText || `Download failed with status ${response.status}`);
-    }
-
-    return {
-      blob: await response.blob(),
-      contentDisposition: response.headers.get('content-disposition'),
-    };
-  }
-
-  private async readErrorMessage(response: Response): Promise<string> {
-    const raw = (await response.text()).trim();
-    if (!raw) {
-      return '';
-    }
-
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const error = parsed.error;
-      if (typeof error === 'string' && error.trim()) {
-        return error;
-      }
-
-      const message = parsed.message;
-      if (typeof message === 'string' && message.trim()) {
-        return message;
-      }
-    } catch {
-      // Raw response was not JSON.
-    }
-
-    return raw;
-  }
-
-  private async delay(ms: number): Promise<void> {
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, ms);
-    });
-  }
-
-  private extractFilenameFromContentDisposition(contentDisposition: string | null): string | null {
-    if (!contentDisposition) {
-      return null;
-    }
-
-    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
-    if (utf8Match?.[1]) {
-      try {
-        return decodeURIComponent(utf8Match[1]);
-      } catch {
-        return utf8Match[1];
-      }
-    }
-
-    const basicMatch = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition);
-    if (basicMatch?.[1]) {
-      return basicMatch[1];
-    }
-
-    return null;
-  }
-
-  private downloadBlob(blob: Blob, filename: string): void {
+  private downloadPdf(pdfBytes: Uint8Array, filename: string): void {
+    const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
 
     const link = document.createElement('a');

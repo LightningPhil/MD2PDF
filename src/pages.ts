@@ -1,154 +1,274 @@
-import { paginate } from './paginator.js';
-import { renderMath, MathRenderMode } from './katex.js';
-import { mmToPx } from './units.js';
+import {
+  typesetMarkdown,
+  renderToCanvas,
+  generatePdf,
+  pxToPt,
+  getPageDimensionsPx,
+  loadFonts,
+  type PageLayout,
+  type PageSizeKey,
+} from './typesetter.js';
 
-const DEFAULT_PAGE_HEIGHT_MM = 297;
 const DEFAULT_MARGIN_MM = 20;
+const DEFAULT_FONT_SIZE_PX = 12;
+const DEFAULT_PAGE_SIZE: PageSizeKey = 'a4';
+const PAGE_GAP_PX = 24;
+
+export interface TypesetterConfig {
+  pageSize: PageSizeKey;
+  marginMm: number;
+  fontSizePt: number;
+}
 
 export class PageManager {
   private container: HTMLElement;
-  private pages: HTMLElement[] = [];
-  private mathMode: MathRenderMode = 'html';
-  
+  private canvas: HTMLCanvasElement;
+  private pages: PageLayout[] = [];
+  private pageSize: PageSizeKey = DEFAULT_PAGE_SIZE;
+  private marginMm: number = DEFAULT_MARGIN_MM;
+  private fontSizePx: number = DEFAULT_FONT_SIZE_PX;
+  private currentMarkdown: string = '';
+  private isInitialized: boolean = false;
+  private pendingRender: boolean = false;
+  private zoom: number = 1;
+
   constructor(containerId: string) {
     const container = document.getElementById(containerId);
     if (!container) {
       throw new Error(`Container element with id '${containerId}' not found`);
     }
     this.container = container;
-  }
-  
-  /**
-   * Updates the pages with new content
-   * @param content - The HTML content to display
-   */
-  updatePages(content: HTMLElement): void {
-    // Clear existing pages
-    this.clearPages();
 
-    // Create pages using the paginator
-    this.pages = this.paginateContent(content);
-    
-    // Add pages to container
-    this.displayPages();
-  }
-  
-  /**
-   * Sets the math rendering mode
-   * @param mode - The math rendering mode ('html' or 'svg')
-   */
-  setMathMode(mode: MathRenderMode): void {
-    this.mathMode = mode;
-  }
-  
-  /**
-   * Gets the current math rendering mode
-   */
-  getMathMode(): MathRenderMode {
-    return this.mathMode;
-  }
-  
-  /**
-   * Gets the number of pages
-   */
-  getPageCount(): number {
-    return this.pages.length;
-  }
-
-  /**
-   * Calculates page count without mutating current preview state.
-   */
-  calculatePageCount(content: HTMLElement): number {
-    const paginated = this.paginateContent(content);
-    return Math.max(1, paginated.length);
-  }
-  
-  /**
-   * Clears all pages from the container
-   */
-  private clearPages(): void {
+    // Create canvas element
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'preview-canvas';
+    this.canvas.style.display = 'block';
+    this.canvas.style.margin = '0 auto';
+    this.canvas.style.backgroundColor = '#fff';
     this.container.innerHTML = '';
-    this.pages = [];
+    this.container.appendChild(this.canvas);
+
+    // Initialize fonts in background
+    this.initialize();
   }
-  
-  /**
-   * Displays all pages in the container
-   */
-  private displayPages(): void {
-    this.pages.forEach((pageContent, index) => {
-      // Create page wrapper
-      const pageWrapper = document.createElement('div');
-      pageWrapper.className = 'page';
-      pageWrapper.appendChild(pageContent);
-      
-      // Add page number (optional)
-      const pageNumber = document.createElement('div');
-      pageNumber.className = 'page-number';
-      pageNumber.textContent = `${index + 1}`;
-      pageNumber.style.cssText = `
-        position: absolute;
-        bottom: 10mm;
-        right: 10mm;
-        font-size: 10px;
-        color: #666;
-        font-family: Arial, sans-serif;
-      `;
-      pageWrapper.appendChild(pageNumber);
-      
-      this.container.appendChild(pageWrapper);
-    });
-    
-    // If no pages, show placeholder
-    if (this.pages.length === 0) {
-      const placeholder = document.createElement('div');
-      placeholder.className = 'page';
-      placeholder.innerHTML = `
-        <div class="page-content">
-          <p style="text-align: center; color: #999; margin-top: 50px;">
-            Preview will appear here...
-          </p>
-        </div>
-      `;
-      this.container.appendChild(placeholder);
+
+  private async initialize(): Promise<void> {
+    try {
+      await loadFonts();
+      this.isInitialized = true;
+      if (this.pendingRender) {
+        this.pendingRender = false;
+        await this.render();
+      }
+    } catch (error) {
+      console.error('Failed to initialize typesetter fonts:', error);
     }
   }
 
   /**
-   * Paginates content using current page settings and math mode.
+   * Updates the preview with new markdown content.
    */
-  private paginateContent(content: HTMLElement): HTMLElement[] {
-    // Calculate available content height from current margin settings.
-    const pageHeightPx = this.getPageContentHeightPx();
+  async updateMarkdown(markdown: string): Promise<void> {
+    this.currentMarkdown = markdown;
 
-    // Render math before pagination so block heights are measured correctly.
-    const paginableContent = content.cloneNode(true) as HTMLElement;
-    renderMath(paginableContent, this.mathMode);
+    if (!this.isInitialized) {
+      this.pendingRender = true;
+      return;
+    }
 
-    return paginate(paginableContent, pageHeightPx);
+    await this.render();
   }
 
   /**
-   * Calculates usable content height for an A4 page based on current margin.
+   * Sets the page size.
    */
-  private getPageContentHeightPx(): number {
-    const pageHeightMm = this.getPageHeightMm();
-    const marginMm = this.getPageMarginMm();
-    const contentHeightMm = Math.max(pageHeightMm - (marginMm * 2), 40);
-    return mmToPx(contentHeightMm);
+  setPageSize(size: PageSizeKey): void {
+    if (this.pageSize !== size) {
+      this.pageSize = size;
+      void this.render();
+    }
   }
 
-  private getPageHeightMm(): number {
-    const rootStyles = getComputedStyle(document.documentElement);
-    const pageHeightValue = rootStyles.getPropertyValue('--page-height-mm').trim();
-    const pageHeightMm = parseFloat(pageHeightValue);
-    return Number.isFinite(pageHeightMm) ? pageHeightMm : DEFAULT_PAGE_HEIGHT_MM;
+  /**
+   * Sets the margin in mm.
+   */
+  setMargin(marginMm: number): void {
+    if (this.marginMm !== marginMm) {
+      this.marginMm = marginMm;
+      void this.render();
+    }
   }
 
-  private getPageMarginMm(): number {
-    const rootStyles = getComputedStyle(document.documentElement);
-    const marginValue = rootStyles.getPropertyValue('--page-margin').trim();
-    const marginMm = parseFloat(marginValue);
-    return Number.isFinite(marginMm) ? marginMm : DEFAULT_MARGIN_MM;
+  /**
+   * Sets the font size in px (will be converted to pt).
+   */
+  setFontSize(fontSizePx: number): void {
+    if (this.fontSizePx !== fontSizePx) {
+      this.fontSizePx = fontSizePx;
+      void this.render();
+    }
+  }
+
+  /**
+   * Sets the zoom level for rendering.
+   */
+  setZoom(zoom: number): void {
+    if (this.zoom !== zoom) {
+      this.zoom = zoom;
+      void this.renderCanvas();
+    }
+  }
+
+  /**
+   * Gets the current zoom level.
+   */
+  getZoom(): number {
+    return this.zoom;
+  }
+
+  /**
+   * Gets the number of pages.
+   */
+  getPageCount(): number {
+    return Math.max(1, this.pages.length);
+  }
+
+  /**
+   * Gets the current pages.
+   */
+  getPages(): PageLayout[] {
+    return this.pages;
+  }
+
+  /**
+   * Gets the canvas element.
+   */
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
+  /**
+   * Calculates page count for given markdown without updating preview.
+   */
+  async calculatePageCount(markdown: string): Promise<number> {
+    if (!this.isInitialized) {
+      return 1;
+    }
+
+    try {
+      const config = this.getConfig();
+      const result = await typesetMarkdown(markdown, config);
+      return Math.max(1, result.pages.length);
+    } catch (error) {
+      console.error('Failed to calculate page count:', error);
+      return 1;
+    }
+  }
+
+  /**
+   * Generates a PDF from the current pages.
+   */
+  async exportPdf(title?: string): Promise<Uint8Array> {
+    const config = this.getConfig();
+    return generatePdf(this.pages, config, { title });
+  }
+
+  /**
+   * Gets the page dimensions in pixels at current zoom.
+   */
+  getPageDimensions(): { widthPx: number; heightPx: number } {
+    const base = getPageDimensionsPx(this.pageSize);
+    return {
+      widthPx: base.widthPx * this.zoom,
+      heightPx: base.heightPx * this.zoom,
+    };
+  }
+
+  /**
+   * Gets the total canvas height (all pages stacked).
+   */
+  getTotalHeight(): number {
+    const pageDims = this.getPageDimensions();
+    const pageCount = this.getPageCount();
+    return pageCount * pageDims.heightPx + (pageCount - 1) * PAGE_GAP_PX * this.zoom;
+  }
+
+  private getConfig(): TypesetterConfig {
+    return {
+      pageSize: this.pageSize,
+      marginMm: this.marginMm,
+      fontSizePt: pxToPt(this.fontSizePx),
+    };
+  }
+
+  private async render(): Promise<void> {
+    if (!this.isInitialized) {
+      return;
+    }
+
+    const markdown = this.currentMarkdown.trim();
+    if (!markdown) {
+      this.pages = [];
+      this.renderCanvas();
+      return;
+    }
+
+    try {
+      const config = this.getConfig();
+      const result = await typesetMarkdown(markdown, config);
+      this.pages = result.pages;
+
+      if (result.diagnostics.errors.length > 0) {
+        console.warn('Typeset errors:', result.diagnostics.errors);
+      }
+
+      this.renderCanvas();
+    } catch (error) {
+      console.error('Failed to typeset markdown:', error);
+    }
+  }
+
+  private async renderCanvas(): Promise<void> {
+    if (!this.isInitialized) {
+      return;
+    }
+
+    // Handle empty state
+    if (this.pages.length === 0) {
+      const pageDims = getPageDimensionsPx(this.pageSize);
+      this.canvas.width = pageDims.widthPx * this.zoom * window.devicePixelRatio;
+      this.canvas.height = pageDims.heightPx * this.zoom * window.devicePixelRatio;
+      this.canvas.style.width = `${pageDims.widthPx * this.zoom}px`;
+      this.canvas.style.height = `${pageDims.heightPx * this.zoom}px`;
+
+      const ctx = this.canvas.getContext('2d');
+      if (ctx) {
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, pageDims.widthPx * this.zoom, pageDims.heightPx * this.zoom);
+        ctx.fillStyle = '#999';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Preview will appear here...', pageDims.widthPx * this.zoom / 2, pageDims.heightPx * this.zoom / 2);
+      }
+      return;
+    }
+
+    try {
+      const config = this.getConfig();
+      await renderToCanvas(this.pages, this.canvas, config, {
+        zoom: this.zoom,
+        pageGapPt: PAGE_GAP_PX * 72 / 96, // Convert px to pt
+        background: 'white',
+        mode: 'stackedPages',
+      });
+
+      // Update canvas display size
+      const pageDims = getPageDimensionsPx(this.pageSize);
+      this.canvas.style.width = `${pageDims.widthPx * this.zoom}px`;
+    } catch (error) {
+      console.error('Failed to render canvas:', error);
+    }
   }
 
 }

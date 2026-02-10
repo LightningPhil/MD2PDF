@@ -1,21 +1,17 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { PageManager } from '../src/pages'
 
-// Mock the paginate function
-vi.mock('../src/paginator', () => ({
-  paginate: vi.fn((content: HTMLElement, height: number) => {
-    // Return a simple mock page
-    const page = document.createElement('div')
-    page.className = 'page-content'
-    page.innerHTML = content.innerHTML
-    return [page]
-  })
-}))
-
-// Mock renderMath
-vi.mock('../src/katex', () => ({
-  renderMath: vi.fn(),
-  MathRenderMode: {}
+// Mock the typesetter module
+vi.mock('../src/typesetter', () => ({
+  loadFonts: vi.fn().mockResolvedValue(undefined),
+  typesetMarkdown: vi.fn().mockResolvedValue({
+    pages: [],
+    diagnostics: { errors: [], warnings: [] },
+  }),
+  renderToCanvas: vi.fn().mockResolvedValue(undefined),
+  generatePdf: vi.fn().mockResolvedValue(new Uint8Array([0x25, 0x50, 0x44, 0x46])), // %PDF
+  pxToPt: vi.fn((px: number) => px * 0.75),
+  getPageDimensionsPx: vi.fn(() => ({ widthPx: 595, heightPx: 842 })),
 }))
 
 describe('PageManager', () => {
@@ -41,52 +37,52 @@ describe('PageManager', () => {
     expect(() => new PageManager('nonexistent')).toThrow()
   })
 
-  it('getMathMode returns default html mode', () => {
-    const manager = new PageManager('previewContainer')
-    expect(manager.getMathMode()).toBe('html')
+  it('creates canvas element in container', () => {
+    new PageManager('previewContainer')
+    const canvas = container.querySelector('canvas')
+    expect(canvas).not.toBeNull()
+    expect(canvas?.className).toBe('preview-canvas')
   })
 
-  it('setMathMode updates the math mode', () => {
+  it('getPageCount returns 1 for empty pages', () => {
     const manager = new PageManager('previewContainer')
-    manager.setMathMode('svg')
-    expect(manager.getMathMode()).toBe('svg')
+    expect(manager.getPageCount()).toBe(1)
   })
 
-  it('getPageCount returns 0 initially', () => {
+  it('getCanvas returns canvas element', () => {
     const manager = new PageManager('previewContainer')
-    expect(manager.getPageCount()).toBe(0)
+    const canvas = manager.getCanvas()
+    expect(canvas).toBeInstanceOf(HTMLCanvasElement)
   })
 
-  it('updatePages clears container and adds new pages', () => {
+  it('getPages returns empty array initially', () => {
     const manager = new PageManager('previewContainer')
-    const content = document.createElement('div')
-    content.innerHTML = '<p>Test content</p>'
-    
-    manager.updatePages(content)
-    
-    expect(container.querySelectorAll('.page').length).toBeGreaterThanOrEqual(1)
+    expect(manager.getPages()).toEqual([])
   })
 
-  it('updatePages shows placeholder for empty content', async () => {
+  it('setZoom updates zoom level', () => {
     const manager = new PageManager('previewContainer')
-    const content = document.createElement('div')
-    
-    // Mock paginate to return empty array for empty content
-    const { paginate } = await import('../src/paginator')
-    vi.mocked(paginate).mockReturnValueOnce([])
-    
-    manager.updatePages(content)
-    
-    expect(container.textContent).toContain('Preview will appear here')
+    manager.setZoom(1.5)
+    expect(manager.getZoom()).toBe(1.5)
   })
 
-  it('updatePages adds page numbers', () => {
+  it('getZoom returns default zoom of 1', () => {
     const manager = new PageManager('previewContainer')
-    const content = document.createElement('div')
-    content.innerHTML = '<p>Content</p>'
-    
-    manager.updatePages(content)
-    
-    expect(container.querySelector('.page-number')).toBeTruthy()
+    expect(manager.getZoom()).toBe(1)
+  })
+
+  it('getPageDimensions returns page size', () => {
+    const manager = new PageManager('previewContainer')
+    const dims = manager.getPageDimensions()
+    expect(dims).toHaveProperty('widthPx')
+    expect(dims).toHaveProperty('heightPx')
+    expect(dims.widthPx).toBeGreaterThan(0)
+    expect(dims.heightPx).toBeGreaterThan(0)
+  })
+
+  it('getTotalHeight calculates based on page count', () => {
+    const manager = new PageManager('previewContainer')
+    const totalHeight = manager.getTotalHeight()
+    expect(totalHeight).toBeGreaterThan(0)
   })
 })

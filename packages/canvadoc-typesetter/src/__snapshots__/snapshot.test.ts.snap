@@ -1,0 +1,709 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Markdown Parser Snapshots > blockquote and hard break structure > blockquote snapshot 1`] = `
+[
+  {
+    "depth": 1,
+    "kind": "blockquote",
+    "text": "line one",
+  },
+  {
+    "depth": 2,
+    "kind": "blockquote",
+    "text": "line two",
+  },
+  {
+    "depth": 1,
+    "kind": "blockquote",
+    "text": "line three",
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > blockquote and hard break structure > hard line break snapshot 1`] = `
+[
+  {
+    "kind": "paragraph",
+    "text": "line one
+line two",
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > code blocks structure > fenced code block snapshot 1`] = `
+[
+  {
+    "kind": "code",
+    "lines": [
+      "const x = 1;",
+      "const y = 2;",
+    ],
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > headings structure > all heading levels snapshot 1`] = `
+[
+  {
+    "kind": "heading",
+    "level": 1,
+    "text": "H1",
+  },
+  {
+    "kind": "heading",
+    "level": 2,
+    "text": "H2",
+  },
+  {
+    "kind": "heading",
+    "level": 3,
+    "text": "H3",
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > lists structure > nested mixed list snapshot 1`] = `
+[
+  {
+    "itemDepths": [
+      0,
+      1,
+      1,
+      0,
+    ],
+    "itemKinds": [
+      "unordered",
+      "ordered",
+      "ordered",
+      "unordered",
+    ],
+    "itemNumbers": [
+      null,
+      1,
+      2,
+      null,
+    ],
+    "items": [
+      "Top",
+      "Child",
+      "Child two",
+      "Bottom",
+    ],
+    "kind": "list",
+    "ordered": false,
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > lists structure > ordered list snapshot 1`] = `
+[
+  {
+    "items": [
+      "First",
+      "Second",
+      "Third",
+    ],
+    "kind": "list",
+    "ordered": true,
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > lists structure > unordered list snapshot 1`] = `
+[
+  {
+    "items": [
+      "Item one",
+      "Item two",
+      "Item three",
+    ],
+    "kind": "list",
+    "ordered": false,
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > mixed content structure > complex document snapshot 1`] = `
+[
+  {
+    "kind": "heading",
+    "level": 1,
+    "text": "Title",
+  },
+  {
+    "kind": "paragraph",
+    "text": "Introduction paragraph with some text.",
+  },
+  {
+    "kind": "heading",
+    "level": 2,
+    "text": "Section One",
+  },
+  {
+    "items": [
+      "Item A",
+      "Item B",
+    ],
+    "kind": "list",
+    "ordered": false,
+  },
+  {
+    "kind": "code",
+    "lines": [
+      "def hello():",
+      "    print("Hi")",
+    ],
+  },
+  {
+    "align": [
+      "left",
+      "left",
+    ],
+    "header": [
+      "Name",
+      "Value",
+    ],
+    "kind": "table",
+    "rows": [
+      [
+        "x",
+        "10",
+      ],
+    ],
+  },
+  {
+    "expr": "E = mc^2",
+    "kind": "displayMath",
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > paragraphs structure > multiple paragraphs snapshot 1`] = `
+[
+  {
+    "kind": "paragraph",
+    "text": "First paragraph.",
+  },
+  {
+    "kind": "paragraph",
+    "text": "Second paragraph.",
+  },
+  {
+    "kind": "paragraph",
+    "text": "Third.",
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > paragraphs structure > single paragraph snapshot 1`] = `
+[
+  {
+    "kind": "paragraph",
+    "text": "Hello world.",
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > tables structure > aligned table snapshot 1`] = `
+[
+  {
+    "align": [
+      "left",
+      "center",
+      "right",
+    ],
+    "header": [
+      "L",
+      "C",
+      "R",
+    ],
+    "kind": "table",
+    "rows": [
+      [
+        "a",
+        "b",
+        "c",
+      ],
+    ],
+  },
+]
+`;
+
+exports[`Markdown Parser Snapshots > tables structure > simple table snapshot 1`] = `
+[
+  {
+    "align": [
+      "left",
+      "left",
+      "left",
+    ],
+    "header": [
+      "A",
+      "B",
+      "C",
+    ],
+    "kind": "table",
+    "rows": [
+      [
+        "1",
+        "2",
+        "3",
+      ],
+    ],
+  },
+]
+`;
+
+exports[`Math Parser Snapshots > Greek letters > common Greek letters snapshot 1`] = `
+{
+  "children": [
+    {
+      "kind": "symbol",
+      "value": "α",
+    },
+    {
+      "kind": "symbol",
+      "value": "+",
+    },
+    {
+      "kind": "symbol",
+      "value": "β",
+    },
+    {
+      "kind": "symbol",
+      "value": "+",
+    },
+    {
+      "kind": "symbol",
+      "value": "γ",
+    },
+  ],
+  "kind": "row",
+}
+`;
+
+exports[`Math Parser Snapshots > complex expressions > integral snapshot 1`] = `
+{
+  "children": [
+    {
+      "base": {
+        "kind": "symbol",
+        "value": "∫",
+      },
+      "kind": "supsub",
+      "sub": {
+        "kind": "symbol",
+        "value": "0",
+      },
+      "sup": {
+        "kind": "symbol",
+        "value": "∞",
+      },
+    },
+    {
+      "base": {
+        "kind": "symbol",
+        "value": "e",
+      },
+      "kind": "supsub",
+      "sub": undefined,
+      "sup": {
+        "children": [
+          {
+            "kind": "symbol",
+            "value": "-",
+          },
+          {
+            "base": {
+              "kind": "symbol",
+              "value": "x",
+            },
+            "kind": "supsub",
+            "sub": undefined,
+            "sup": {
+              "kind": "symbol",
+              "value": "2",
+            },
+          },
+        ],
+        "kind": "row",
+      },
+    },
+    {
+      "kind": "symbol",
+      "value": "d",
+    },
+    {
+      "kind": "symbol",
+      "value": "x",
+    },
+  ],
+  "kind": "row",
+}
+`;
+
+exports[`Math Parser Snapshots > complex expressions > overset/operatorname snapshot 1`] = `
+{
+  "children": [
+    {
+      "kind": "operatorname",
+      "name": "rank",
+    },
+    {
+      "kind": "symbol",
+      "value": "(",
+    },
+    {
+      "kind": "symbol",
+      "value": "A",
+    },
+    {
+      "kind": "symbol",
+      "value": ")",
+    },
+    {
+      "kind": "symbol",
+      "value": "+",
+    },
+    {
+      "base": {
+        "kind": "symbol",
+        "value": "x",
+      },
+      "kind": "overunder",
+      "over": {
+        "kind": "symbol",
+        "value": "*",
+      },
+    },
+  ],
+  "kind": "row",
+}
+`;
+
+exports[`Math Parser Snapshots > complex expressions > quadratic formula snapshot 1`] = `
+{
+  "children": [
+    {
+      "kind": "symbol",
+      "value": "x",
+    },
+    {
+      "kind": "symbol",
+      "value": "=",
+    },
+    {
+      "denominator": {
+        "children": [
+          {
+            "kind": "symbol",
+            "value": "2",
+          },
+          {
+            "kind": "symbol",
+            "value": "a",
+          },
+        ],
+        "kind": "row",
+      },
+      "kind": "fraction",
+      "numerator": {
+        "children": [
+          {
+            "kind": "symbol",
+            "value": "-",
+          },
+          {
+            "kind": "symbol",
+            "value": "b",
+          },
+          {
+            "kind": "symbol",
+            "value": "±",
+          },
+          {
+            "body": {
+              "children": [
+                {
+                  "base": {
+                    "kind": "symbol",
+                    "value": "b",
+                  },
+                  "kind": "supsub",
+                  "sub": undefined,
+                  "sup": {
+                    "kind": "symbol",
+                    "value": "2",
+                  },
+                },
+                {
+                  "kind": "symbol",
+                  "value": "-",
+                },
+                {
+                  "kind": "symbol",
+                  "value": "4",
+                },
+                {
+                  "kind": "symbol",
+                  "value": "a",
+                },
+                {
+                  "kind": "symbol",
+                  "value": "c",
+                },
+              ],
+              "kind": "row",
+            },
+            "degree": undefined,
+            "kind": "sqrt",
+          },
+        ],
+        "kind": "row",
+      },
+    },
+  ],
+  "kind": "row",
+}
+`;
+
+exports[`Math Parser Snapshots > complex expressions > summation snapshot 1`] = `
+{
+  "children": [
+    {
+      "base": {
+        "kind": "symbol",
+        "value": "∑",
+      },
+      "kind": "supsub",
+      "sub": {
+        "children": [
+          {
+            "kind": "symbol",
+            "value": "i",
+          },
+          {
+            "kind": "symbol",
+            "value": "=",
+          },
+          {
+            "kind": "symbol",
+            "value": "1",
+          },
+        ],
+        "kind": "row",
+      },
+      "sup": {
+        "kind": "symbol",
+        "value": "n",
+      },
+    },
+    {
+      "base": {
+        "kind": "symbol",
+        "value": "x",
+      },
+      "kind": "supsub",
+      "sub": {
+        "kind": "symbol",
+        "value": "i",
+      },
+      "sup": undefined,
+    },
+  ],
+  "kind": "row",
+}
+`;
+
+exports[`Math Parser Snapshots > environments > matrix snapshot 1`] = `
+{
+  "body": "a & b \\\\ c & d",
+  "kind": "environment",
+  "name": "pmatrix",
+}
+`;
+
+exports[`Math Parser Snapshots > fractions > binom snapshot 1`] = `
+{
+  "kind": "binom",
+  "lower": {
+    "kind": "symbol",
+    "value": "k",
+  },
+  "upper": {
+    "kind": "symbol",
+    "value": "n",
+  },
+}
+`;
+
+exports[`Math Parser Snapshots > fractions > nested fraction snapshot 1`] = `
+{
+  "denominator": {
+    "kind": "symbol",
+    "value": "c",
+  },
+  "kind": "fraction",
+  "numerator": {
+    "denominator": {
+      "kind": "symbol",
+      "value": "b",
+    },
+    "kind": "fraction",
+    "numerator": {
+      "kind": "symbol",
+      "value": "a",
+    },
+  },
+}
+`;
+
+exports[`Math Parser Snapshots > fractions > simple fraction snapshot 1`] = `
+{
+  "denominator": {
+    "kind": "symbol",
+    "value": "b",
+  },
+  "kind": "fraction",
+  "numerator": {
+    "kind": "symbol",
+    "value": "a",
+  },
+}
+`;
+
+exports[`Math Parser Snapshots > simple expressions > numbers snapshot 1`] = `
+{
+  "children": [
+    {
+      "kind": "symbol",
+      "value": "1",
+    },
+    {
+      "kind": "symbol",
+      "value": "2",
+    },
+    {
+      "kind": "symbol",
+      "value": "3",
+    },
+  ],
+  "kind": "row",
+}
+`;
+
+exports[`Math Parser Snapshots > simple expressions > variables snapshot 1`] = `
+{
+  "children": [
+    {
+      "kind": "symbol",
+      "value": "x",
+    },
+    {
+      "kind": "symbol",
+      "value": "y",
+    },
+    {
+      "kind": "symbol",
+      "value": "z",
+    },
+  ],
+  "kind": "row",
+}
+`;
+
+exports[`Math Parser Snapshots > square roots > nth root snapshot 1`] = `
+{
+  "body": {
+    "kind": "symbol",
+    "value": "x",
+  },
+  "degree": {
+    "kind": "symbol",
+    "value": "3",
+  },
+  "kind": "sqrt",
+}
+`;
+
+exports[`Math Parser Snapshots > square roots > sqrt snapshot 1`] = `
+{
+  "body": {
+    "children": [
+      {
+        "base": {
+          "kind": "symbol",
+          "value": "x",
+        },
+        "kind": "supsub",
+        "sub": undefined,
+        "sup": {
+          "kind": "symbol",
+          "value": "2",
+        },
+      },
+      {
+        "kind": "symbol",
+        "value": "+",
+      },
+      {
+        "base": {
+          "kind": "symbol",
+          "value": "y",
+        },
+        "kind": "supsub",
+        "sub": undefined,
+        "sup": {
+          "kind": "symbol",
+          "value": "2",
+        },
+      },
+    ],
+    "kind": "row",
+  },
+  "degree": undefined,
+  "kind": "sqrt",
+}
+`;
+
+exports[`Math Parser Snapshots > superscripts and subscripts > combined sup sub snapshot 1`] = `
+{
+  "children": [
+    {
+      "base": {
+        "kind": "symbol",
+        "value": "x",
+      },
+      "kind": "supsub",
+      "sub": {
+        "kind": "symbol",
+        "value": "i",
+      },
+      "sup": {
+        "kind": "symbol",
+        "value": "2",
+      },
+    },
+    {
+      "kind": "symbol",
+      "value": "+",
+    },
+    {
+      "base": {
+        "kind": "symbol",
+        "value": "y",
+      },
+      "kind": "supsub",
+      "sub": {
+        "kind": "symbol",
+        "value": "j",
+      },
+      "sup": {
+        "kind": "symbol",
+        "value": "3",
+      },
+    },
+  ],
+  "kind": "row",
+}
+`;

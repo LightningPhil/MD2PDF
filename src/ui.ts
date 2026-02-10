@@ -1,5 +1,11 @@
-import { MathRenderMode } from './katex.js';
-import { mmToPx } from './units.js';
+// Math render mode - kept for backwards compatibility in UI, though typesetter handles math natively
+export type MathRenderMode = 'html' | 'svg';
+
+// Utility function to convert mm to px
+const MM_TO_PX = 96 / 25.4;
+function mmToPx(mm: number): number {
+  return mm * MM_TO_PX;
+}
 
 export type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
 export type ThemeMode = 'dark' | 'light';
@@ -26,6 +32,7 @@ export interface DocumentListItem {
 export interface ExportModalContext {
   activeFilename: string;
   totalFiles: number;
+  isApiAvailable?: boolean;
 }
 
 export interface ExportProgressUpdate {
@@ -149,6 +156,7 @@ export class UIController {
   private exportContext: ExportModalContext = {
     activeFilename: 'Untitled.md',
     totalFiles: 1,
+    isApiAvailable: true,
   };
 
   // Callbacks
@@ -512,20 +520,31 @@ export class UIController {
 
   setExportBusy(isBusy: boolean): void {
     this.isExporting = isBusy;
+    const isApiAvailable = this.exportContext.isApiAvailable ?? true;
 
     this.exportPdfBtn.disabled = isBusy;
-    this.exportStartBtn.disabled = isBusy || this.exportContext.totalFiles === 0;
+    this.exportStartBtn.disabled = isBusy || this.exportContext.totalFiles === 0 || !isApiAvailable;
     this.exportCancelBtn.disabled = !isBusy;
     this.exportDismissBtn.disabled = isBusy;
     this.exportModalCloseBtn.disabled = isBusy;
-    this.exportScopeCurrent.disabled = isBusy || this.exportContext.totalFiles === 0;
-    this.exportScopeAll.disabled = isBusy || this.exportContext.totalFiles <= 1;
+    this.exportScopeCurrent.disabled = isBusy || this.exportContext.totalFiles === 0 || !isApiAvailable;
+    this.exportScopeAll.disabled = isBusy || this.exportContext.totalFiles <= 1 || !isApiAvailable;
 
     this.exportLog.setAttribute('aria-busy', isBusy ? 'true' : 'false');
     this.exportModalBackdrop.classList.toggle('is-exporting', isBusy);
 
     if (isBusy && !this.isExportModalOpen) {
       this.openExportModal(this.exportContext);
+    }
+  }
+
+  updateExportAvailability(isApiAvailable: boolean): void {
+    this.exportContext.isApiAvailable = isApiAvailable;
+    
+    // If export modal is open, update it
+    if (this.isExportModalOpen) {
+      this.applyExportContext();
+      this.resetExportPanel();
     }
   }
 
@@ -926,34 +945,57 @@ export class UIController {
   private normalizeExportContext(context: ExportModalContext): ExportModalContext {
     const activeFilename = (context.activeFilename || 'No active file').trim() || 'No active file';
     const totalFiles = Math.max(0, Math.floor(context.totalFiles));
+    const isApiAvailable = context.isApiAvailable !== false;
 
     return {
       activeFilename,
       totalFiles,
+      isApiAvailable,
     };
   }
 
   private applyExportContext(): void {
     const totalFiles = this.exportContext.totalFiles;
+    const isApiAvailable = this.exportContext.isApiAvailable ?? true;
+    
     this.exportScopeCurrentLabel.textContent = `Current file (${this.exportContext.activeFilename})`;
     this.exportScopeAllLabel.textContent = `All open files (${totalFiles})`;
 
     const noDocuments = totalFiles === 0;
     const disableAll = totalFiles <= 1;
-    this.exportScopeCurrent.disabled = noDocuments || this.isExporting;
-    this.exportScopeAll.disabled = disableAll || this.isExporting;
-    this.exportStartBtn.disabled = this.isExporting || noDocuments;
+    const apiUnavailable = !isApiAvailable;
+    
+    this.exportScopeCurrent.disabled = noDocuments || this.isExporting || apiUnavailable;
+    this.exportScopeAll.disabled = disableAll || this.isExporting || apiUnavailable;
+    this.exportStartBtn.disabled = this.isExporting || noDocuments || apiUnavailable;
+    
     if (disableAll && this.exportScopeAll.checked) {
       this.exportScopeCurrent.checked = true;
     }
   }
 
   private resetExportPanel(): void {
+    const isApiAvailable = this.exportContext.isApiAvailable ?? true;
     const total = this.exportContext.totalFiles === 0
       ? 0
       : this.getSelectedExportScope() === 'all'
         ? this.exportContext.totalFiles
         : 1;
+
+    if (!isApiAvailable) {
+      this.setExportProgress({
+        processed: 0,
+        total: 0,
+        message: 'PDF export not available in static mode',
+      });
+      this.clearExportLog();
+      this.setExportSummary(
+        'PDF export is not available when running from static files. ' +
+        'To use PDF export, run the app with "pnpm dev" or deploy with a server that supports the export API.'
+      );
+      return;
+    }
+
     this.setExportProgress({
       processed: 0,
       total,

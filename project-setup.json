@@ -31,11 +31,10 @@
   },
   "notes": {
     "fromProjectPlan": [
-      "Project scope is complete through Phase 2, including headless PDF export",
+      "Canvas-based markdown preview using canvadoc-typesetter",
       "Split-pane UI with draggable divider, zoom controls, and theme toggle",
       "Multi-document workflow with upload, select, rename, close, and page counts",
-      "Bidirectional source sync between markdown editor and rendered preview",
-      "Single and batch export to PDF/ZIP with progress logs and cancel support"
+      "Client-side PDF export (no headless browser required)"
     ],
     "todos": [
       "Confirm remoteUrl matches actual GitHub repository or blank if undesired"

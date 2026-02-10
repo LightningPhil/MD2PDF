@@ -1,14 +1,12 @@
 {
   "name": "md2pdf",
-  "version": "0.1.0",
-  "description": "Web app that loads/edits Markdown and renders it live as paginated A4-style pages with KaTeX math support",
+  "version": "0.2.0",
+  "description": "Web app that loads/edits Markdown and renders it live as paginated pages with full math support. Features client-side PDF export.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "export:pdf": "node scripts/export-pdf.mjs",
-    "export:pdf:batch": "node scripts/export-pdf-batch.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,14 +17,12 @@
     "@types/node": "^20.0.0",
     "happy-dom": "^20.5.0",
     "jsdom": "^28.0.0",
-    "playwright": "^1.51.1",
     "typescript": "^5.0.0",
     "vite": "^5.0.0",
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "katex": "^0.16.0",
-    "marked": "^12.0.0"
+    "canvadoc-typesetter": "file:packages/canvadoc-typesetter"
   },
   "author": "Philip Leichauer",
   "license": "MIT"
