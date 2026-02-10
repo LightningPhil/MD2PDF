@@ -311,6 +311,23 @@ export type TypesetDiagnostics = {
 };
 
 /**
+ * Entry mapping a source line range to a rendered position.
+ * Used for bidirectional scroll sync between editor and canvas.
+ */
+export type SourceMappingEntry = {
+  /** First source line (1-based) */
+  sourceLineStart: number;
+  /** Last source line (1-based, inclusive) */
+  sourceLineEnd: number;
+  /** Zero-based page index where the block starts */
+  pageIndex: number;
+  /** Y position in points from top of page where block starts */
+  yStartPt: number;
+  /** Y position in points from top of page where block ends */
+  yEndPt: number;
+};
+
+/**
  * Result of the typesetting process.
  */
 export type TypesetResult = {
@@ -318,6 +335,8 @@ export type TypesetResult = {
   pages: PageLayout[];
   /** Diagnostic information (warnings, errors, timings) */
   diagnostics: TypesetDiagnostics;
+  /** Source line to rendered position mapping for scroll sync */
+  sourceMapping?: SourceMappingEntry[];
 };
 
 /**

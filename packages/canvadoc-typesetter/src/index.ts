@@ -125,6 +125,9 @@ export async function loadFontSpecFromUrl(
 // Re-export all types
 export * from "./types";
 
+// Re-export markdown types (SourceLineRange, MarkdownBlock)
+export type { SourceLineRange, MarkdownBlock } from "./markdown";
+
 /**
  * Convert millimeters to points.
  * @param mm - Value in millimeters

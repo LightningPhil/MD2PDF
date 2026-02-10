@@ -22,7 +22,8 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "canvadoc-typesetter": "file:packages/canvadoc-typesetter"
+    "canvadoc-typesetter": "file:packages/canvadoc-typesetter",
+    "jszip": "^3.10.1"
   },
   "author": "Philip Leichauer",
   "license": "MIT"

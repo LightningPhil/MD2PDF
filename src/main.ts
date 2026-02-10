@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { MarkdownEditor } from './editor.js';
 import { PageManager } from './pages.js';
 import type { PageSizeKey } from './typesetter.js';
@@ -118,6 +119,45 @@ class MD2PDFApp {
       void this.recomputeInactivePageCounts();
       this.refreshDocumentList();
     });
+
+    this.ui.onHeaderFooterChange(() => {
+      this.applyHeaderFooter();
+      this.renderActiveDocument();
+      void this.recomputeInactivePageCounts();
+      this.refreshDocumentList();
+    });
+
+    // Bidirectional scroll sync: canvas click -> editor
+    this.pageManager.getCanvas().addEventListener('click', (event) => {
+      const canvas = this.pageManager.getCanvas();
+      const rect = canvas.getBoundingClientRect();
+      const canvasY = event.clientY - rect.top;
+      const unscaledCanvasY = this.ui.toUnscaledCanvasY(canvasY);
+      const sourceLine = this.pageManager.getSourceLineFromCanvasY(unscaledCanvasY);
+      if (sourceLine !== null) {
+        this.editor.revealLine(sourceLine);
+      }
+    });
+
+    // Bidirectional scroll sync: editor cursor -> preview (debounced)
+    let scrollSyncTimeout: ReturnType<typeof setTimeout> | null = null;
+    this.editor.onCursorLineChange((lineNumber) => {
+      if (scrollSyncTimeout) {
+        clearTimeout(scrollSyncTimeout);
+      }
+      scrollSyncTimeout = setTimeout(() => {
+        const result = this.pageManager.getCanvasYFromSourceLine(lineNumber);
+        if (result !== null) {
+          this.ui.scrollPreviewToY(result.y);
+          this.ui.highlightCanvasRegion(result.y, result.height);
+        }
+      }, 150);
+    });
+  }
+
+  private applyHeaderFooter(): void {
+    const hfConfig = this.ui.getHeaderFooterConfig();
+    this.pageManager.setHeaderFooter(hfConfig);
   }
 
   private applySettings(): void {
@@ -180,6 +220,10 @@ class MD2PDFApp {
     this.isSwitchingDocument = true;
     this.editor.setContent(target.content);
     this.isSwitchingDocument = false;
+
+    // Update document title for header/footer
+    this.ui.setDocumentTitle(target.filename.replace(/\.md$/i, ''));
+    this.pageManager.setDocumentTitle(target.filename.replace(/\.md$/i, ''));
 
     this.renderActiveDocument();
     this.refreshDocumentList();
@@ -442,7 +486,9 @@ class MD2PDFApp {
         this.ui.setExportSummary(`Finished exporting ${filename}.`);
         this.ui.showNotification(`Exported ${filename}`, 'success');
       } else {
-        // Multiple files - generate and download each
+        // Multiple files - bundle into a single zip
+        const zip = new JSZip();
+        
         for (let i = 0; i < documentsToExport.length; i++) {
           const doc = documentsToExport[i];
           this.ui.appendExportLog(`Generating PDF for ${doc.filename}...`);
@@ -451,18 +497,22 @@ class MD2PDFApp {
           const pdfBytes = await this.pageManager.exportPdf(doc.filename);
           
           const filename = this.toPdfFilename(doc.filename);
-          this.downloadPdf(pdfBytes, filename);
+          zip.file(filename, pdfBytes);
 
           this.ui.setExportProgress({
             processed: i + 1,
             total: totalFiles,
             message: `Exported ${i + 1} of ${totalFiles}`,
           });
-          this.ui.appendExportLog(`Downloaded ${filename}`);
+          this.ui.appendExportLog(`Added ${filename} to archive`);
         }
 
-        this.ui.setExportSummary(`Finished exporting ${totalFiles} files.`);
-        this.ui.showNotification(`Exported ${totalFiles} files`, 'success');
+        this.ui.appendExportLog('Creating zip archive...');
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        this.downloadBlob(zipBlob, 'markdown-export.zip');
+
+        this.ui.setExportSummary(`Finished exporting ${totalFiles} files as zip.`);
+        this.ui.showNotification(`Exported ${totalFiles} files as zip`, 'success');
       }
     } catch (error) {
       console.error('Export error:', error);
@@ -480,6 +530,21 @@ class MD2PDFApp {
 
   private downloadPdf(pdfBytes: Uint8Array, filename: string): void {
     const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  }
+
+  private downloadBlob(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);
 
     const link = document.createElement('a');

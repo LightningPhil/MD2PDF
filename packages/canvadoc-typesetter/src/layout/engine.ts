@@ -22,6 +22,7 @@ import type {
   GlyphRunOp,
   NormalizedTypesetOptions,
   PageLayout,
+  SourceMappingEntry,
   TextSpanOp,
   TypesetDiagnostics,
   TypesetResult
@@ -131,13 +132,34 @@ export function layoutDocument(
   diagnostics.timingsMs!.parseMarkdown = performanceNow() - parseStart;
 
   const state = createInitialState(options, diagnostics, metrics);
+  const sourceMapping: SourceMappingEntry[] = [];
 
   const layoutStart = performanceNow();
   // Layout stage owns all geometry decisions; renderers should be paint-only.
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
     const next = blocks[i + 1] ?? null;
+    
+    // Capture position before block layout
+    const startPageIndex = state.currentPage.index;
+    const startYPt = state.cursorYPt;
+    
     layoutBlock(block, next, state);
+    
+    // Capture position after block layout
+    const endPageIndex = state.currentPage.index;
+    const endYPt = state.cursorYPt;
+    
+    // Add source mapping entry
+    if (block.sourceLines) {
+      sourceMapping.push({
+        sourceLineStart: block.sourceLines.start,
+        sourceLineEnd: block.sourceLines.end,
+        pageIndex: startPageIndex,
+        yStartPt: startYPt,
+        yEndPt: endPageIndex === startPageIndex ? endYPt : state.options.page.resolved.heightPt
+      });
+    }
   }
   diagnostics.timingsMs!.layout = performanceNow() - layoutStart;
 
@@ -150,7 +172,8 @@ export function layoutDocument(
 
   return {
     pages: state.pages,
-    diagnostics
+    diagnostics,
+    sourceMapping
   };
 }
 

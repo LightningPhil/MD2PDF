@@ -1,4 +1,15 @@
 /**
+ * Source line range for a parsed block.
+ * Line numbers are 1-based.
+ */
+export type SourceLineRange = {
+  /** First source line (1-based) */
+  start: number;
+  /** Last source line (1-based, inclusive) */
+  end: number;
+};
+
+/**
  * Parsed markdown block types.
  *
  * The typesetter recognizes these block types:
@@ -12,8 +23,8 @@
  * - `hr`: Horizontal rules
  */
 export type MarkdownBlock =
-  | { kind: "heading"; level: 1 | 2 | 3; text: string }
-  | { kind: "paragraph"; text: string }
+  | { kind: "heading"; level: 1 | 2 | 3; text: string; sourceLines: SourceLineRange }
+  | { kind: "paragraph"; text: string; sourceLines: SourceLineRange }
   | {
       kind: "list";
       ordered: boolean;
@@ -21,12 +32,13 @@ export type MarkdownBlock =
       itemDepths?: number[];
       itemKinds?: Array<"ordered" | "unordered">;
       itemNumbers?: Array<number | null>;
+      sourceLines: SourceLineRange;
     }
-  | { kind: "blockquote"; depth: number; text: string }
-  | { kind: "code"; lines: string[] }
-  | { kind: "displayMath"; expr: string }
-  | { kind: "table"; header: string[]; align: TableAlign[]; rows: string[][] }
-  | { kind: "hr" };
+  | { kind: "blockquote"; depth: number; text: string; sourceLines: SourceLineRange }
+  | { kind: "code"; lines: string[]; sourceLines: SourceLineRange }
+  | { kind: "displayMath"; expr: string; sourceLines: SourceLineRange }
+  | { kind: "table"; header: string[]; align: TableAlign[]; rows: string[][]; sourceLines: SourceLineRange }
+  | { kind: "hr"; sourceLines: SourceLineRange };
 
 /**
  * Table column alignment.
@@ -80,6 +92,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
   while (i < lines.length) {
     const raw = lines[i] ?? "";
     const line = raw.trim();
+    const blockStartLine = i + 1; // 1-based line number
 
     if (!line) {
       i += 1;
@@ -96,14 +109,14 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       if (i < lines.length) {
         i += 1;
       }
-      blocks.push({ kind: "code", lines: codeLines });
+      blocks.push({ kind: "code", lines: codeLines, sourceLines: { start: blockStartLine, end: i } });
       continue;
     }
 
     if (line.startsWith("$$")) {
       const inlineExpr = extractSingleLineDisplayMath(line);
       if (inlineExpr !== null) {
-        blocks.push({ kind: "displayMath", expr: inlineExpr });
+        blocks.push({ kind: "displayMath", expr: inlineExpr, sourceLines: { start: blockStartLine, end: blockStartLine } });
         i += 1;
         continue;
       }
@@ -119,7 +132,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         mathLines.push(last.slice(0, Math.max(0, last.length - 2)).trim());
         i += 1;
       }
-      blocks.push({ kind: "displayMath", expr: mathLines.join(" ").trim() });
+      blocks.push({ kind: "displayMath", expr: mathLines.join(" ").trim(), sourceLines: { start: blockStartLine, end: i } });
       continue;
     }
 
@@ -145,7 +158,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         i += 1;
       }
 
-      blocks.push({ kind: "table", header, align, rows });
+      blocks.push({ kind: "table", header, align, rows, sourceLines: { start: blockStartLine, end: i } });
       continue;
     }
 
@@ -155,14 +168,15 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       blocks.push({
         kind: "heading",
         level: hashCount as 1 | 2 | 3,
-        text: headingMatch[2].trim()
+        text: headingMatch[2].trim(),
+        sourceLines: { start: blockStartLine, end: blockStartLine }
       });
       i += 1;
       continue;
     }
 
     if (line === "---") {
-      blocks.push({ kind: "hr" });
+      blocks.push({ kind: "hr", sourceLines: { start: blockStartLine, end: blockStartLine } });
       i += 1;
       continue;
     }
@@ -170,6 +184,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
     const quoteMatch = raw.match(BLOCKQUOTE_RE);
     if (quoteMatch) {
       const quoteLines: Array<{ depth: number; text: string }> = [];
+      const quoteStartLine = blockStartLine;
       while (i < lines.length) {
         const lineMatch = (lines[i] ?? "").match(BLOCKQUOTE_RE);
         if (!lineMatch) {
@@ -179,6 +194,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         quoteLines.push({ depth, text: lineMatch[2] ?? "" });
         i += 1;
       }
+      const quoteEndLine = i;
 
       let segmentDepth = quoteLines[0]?.depth ?? 1;
       let segment: string[] = [];
@@ -187,7 +203,8 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
           blocks.push({
             kind: "blockquote",
             depth: segmentDepth,
-            text: combineParagraphLines(segment)
+            text: combineParagraphLines(segment),
+            sourceLines: { start: quoteStartLine, end: quoteEndLine }
           });
           segment = [];
           segmentDepth = quoteLine.depth;
@@ -198,7 +215,8 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         blocks.push({
           kind: "blockquote",
           depth: segmentDepth,
-          text: combineParagraphLines(segment)
+          text: combineParagraphLines(segment),
+          sourceLines: { start: quoteStartLine, end: quoteEndLine }
         });
       }
       continue;
@@ -233,7 +251,8 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       const listBlock: Extract<MarkdownBlock, { kind: "list" }> = {
         kind: "list",
         ordered: firstOrdered,
-        items
+        items,
+        sourceLines: { start: blockStartLine, end: i }
       };
       if (hasNested || hasMixedKinds) {
         listBlock.itemDepths = itemDepths;
@@ -253,7 +272,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       paragraphLines.push(nextRaw);
       i += 1;
     }
-    blocks.push({ kind: "paragraph", text: combineParagraphLines(paragraphLines) });
+    blocks.push({ kind: "paragraph", text: combineParagraphLines(paragraphLines), sourceLines: { start: blockStartLine, end: i } });
 
     while (i < lines.length && !(lines[i] ?? "").trim()) {
       i += 1;

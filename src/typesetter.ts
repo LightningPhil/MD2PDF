@@ -12,6 +12,8 @@ import {
   type TypesetOptions,
   type CanvasViewOptions,
   type PdfOptions,
+  type HeaderFooterConfig,
+  type SourceMappingEntry,
 } from 'canvadoc-typesetter';
 
 export type PageSizeKey = 'a4' | 'letter' | 'legal' | 'tabloid' | 'a3';
@@ -42,6 +44,7 @@ interface TypesetterConfig {
   pageSize: PageSizeKey;
   marginMm: number;
   fontSizePt: number;
+  headerFooter?: HeaderFooterConfig;
 }
 
 let fontsLoaded = false;
@@ -58,12 +61,12 @@ export async function loadFonts(): Promise<FontSet> {
   }
 
   const [textFont, textBold, textItalic, textBoldItalic, mathFont, monoFont] = await Promise.all([
-    loadFontSpecFromUrl('source-serif', '/fonts/SourceSerif4-Regular.otf', 'Source Serif 4'),
-    loadFontSpecFromUrl('source-serif-bold', '/fonts/SourceSerif4-Bold.otf', 'Source Serif 4'),
-    loadFontSpecFromUrl('source-serif-italic', '/fonts/SourceSerif4-Italic.otf', 'Source Serif 4'),
-    loadFontSpecFromUrl('source-serif-bold-italic', '/fonts/SourceSerif4-BoldItalic.otf', 'Source Serif 4'),
-    loadFontSpecFromUrl('stix-math', '/fonts/STIXTwoMath-Regular.otf', 'STIX Two Math'),
-    loadFontSpecFromUrl('ibm-plex-mono', '/fonts/IBMPlexMono-Regular.otf', 'IBM Plex Mono'),
+    loadFontSpecFromUrl('source-serif', './fonts/SourceSerif4-Regular.otf', 'Source Serif 4'),
+    loadFontSpecFromUrl('source-serif-bold', './fonts/SourceSerif4-Bold.otf', 'Source Serif 4'),
+    loadFontSpecFromUrl('source-serif-italic', './fonts/SourceSerif4-Italic.otf', 'Source Serif 4'),
+    loadFontSpecFromUrl('source-serif-bold-italic', './fonts/SourceSerif4-BoldItalic.otf', 'Source Serif 4'),
+    loadFontSpecFromUrl('stix-math', './fonts/STIXTwoMath-Regular.otf', 'STIX Two Math'),
+    loadFontSpecFromUrl('ibm-plex-mono', './fonts/IBMPlexMono-Regular.otf', 'IBM Plex Mono'),
   ]);
 
   loadedFonts = {
@@ -85,13 +88,24 @@ export async function loadFonts(): Promise<FontSet> {
 export async function getTypesetter(config: TypesetterConfig): Promise<Typesetter> {
   const fonts = await loadFonts();
 
-  // Check if we can reuse existing typesetter
+  // Check if we can reuse existing typesetter (skip if headerFooter is set - always recreate)
+  const hasHeaderFooter = config.headerFooter && (
+    config.headerFooter.header?.left ||
+    config.headerFooter.header?.center ||
+    config.headerFooter.header?.right ||
+    config.headerFooter.footer?.left ||
+    config.headerFooter.footer?.center ||
+    config.headerFooter.footer?.right
+  );
+
   if (
     typesetterInstance &&
     currentConfig &&
     currentConfig.pageSize === config.pageSize &&
     currentConfig.marginMm === config.marginMm &&
-    currentConfig.fontSizePt === config.fontSizePt
+    currentConfig.fontSizePt === config.fontSizePt &&
+    !hasHeaderFooter &&
+    !currentConfig.headerFooter
   ) {
     return typesetterInstance;
   }
@@ -112,6 +126,7 @@ export async function getTypesetter(config: TypesetterConfig): Promise<Typesette
         left: marginPt,
       },
     },
+    headerFooter: config.headerFooter,
     typography: {
       baseFontSizePt: config.fontSizePt,
       lineHeight: 1.4,
@@ -144,7 +159,7 @@ export async function getTypesetter(config: TypesetterConfig): Promise<Typesette
 export async function typesetMarkdown(
   markdown: string,
   config: TypesetterConfig
-): Promise<{ pages: PageLayout[]; diagnostics: { warnings: string[]; errors: string[] } }> {
+): Promise<{ pages: PageLayout[]; diagnostics: { warnings: string[]; errors: string[] }; sourceMapping?: SourceMappingEntry[] }> {
   const typesetter = await getTypesetter(config);
   return typesetter.typeset(markdown);
 }
@@ -205,4 +220,4 @@ export function getPageDimensionsPx(pageSize: PageSizeKey): { widthPx: number; h
 /**
  * Export types for use elsewhere.
  */
-export type { PageLayout, CanvasViewOptions, PdfOptions };
+export type { PageLayout, CanvasViewOptions, PdfOptions, HeaderFooterConfig, SourceMappingEntry };

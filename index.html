@@ -33,6 +33,7 @@
                 <button id="uploadBtn">Upload</button>
                 <button id="saveBtn">Save</button>
                 <button id="exportPdfBtn">Export PDF</button>
+                <button id="headerFooterBtn">Headers &amp; Footers</button>
                 <button id="mathToggle">Math: HTML</button>
                 <label class="control-label">
                     Font:
@@ -383,6 +384,96 @@ $$
                         </section>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header/Footer Modal -->
+    <div id="headerFooterModalBackdrop" class="hf-modal-backdrop" hidden>
+        <div class="hf-modal" role="dialog" aria-modal="true" aria-labelledby="headerFooterModalTitle">
+            <div class="hf-modal-header">
+                <h2 id="headerFooterModalTitle">Headers &amp; Footers</h2>
+                <button id="hfModalCloseBtn" class="hf-close-btn" type="button" aria-label="Close header/footer dialog" title="Close">&times;</button>
+            </div>
+
+            <div class="hf-modal-body">
+                <fieldset class="hf-mode-group">
+                    <legend>Mode</legend>
+                    <label class="hf-mode-option">
+                        <input id="hfModeNone" type="radio" name="hfMode" value="none" checked>
+                        <span>None</span>
+                    </label>
+                    <label class="hf-mode-option">
+                        <input id="hfModeAuto" type="radio" name="hfMode" value="auto">
+                        <span>Automatic</span>
+                    </label>
+                    <label class="hf-mode-option">
+                        <input id="hfModeManual" type="radio" name="hfMode" value="manual">
+                        <span>Manual</span>
+                    </label>
+                </fieldset>
+
+                <div id="hfAutoSection" class="hf-section" hidden>
+                    <p class="hf-hint">Automatic mode uses:</p>
+                    <ul class="hf-auto-list">
+                        <li><strong>Header:</strong> Document Title (left) &mdash; Date (right)</li>
+                        <li><strong>Footer:</strong> Page X of Y (center)</li>
+                    </ul>
+                    <label class="hf-checkbox">
+                        <input id="hfAutoSkipFirst" type="checkbox">
+                        <span>Skip header/footer on first page</span>
+                    </label>
+                </div>
+
+                <div id="hfManualSection" class="hf-section" hidden>
+                    <p class="hf-hint">Use placeholders: <code>{{pageNumber}}</code>, <code>{{totalPages}}</code>, <code>{{date}}</code></p>
+                    
+                    <fieldset class="hf-content-group">
+                        <legend>Header</legend>
+                        <div class="hf-inputs-row">
+                            <label>
+                                <span class="hf-input-label">Left</span>
+                                <input id="hfHeaderLeft" type="text" placeholder="e.g. Document Title">
+                            </label>
+                            <label>
+                                <span class="hf-input-label">Center</span>
+                                <input id="hfHeaderCenter" type="text" placeholder="e.g. Confidential">
+                            </label>
+                            <label>
+                                <span class="hf-input-label">Right</span>
+                                <input id="hfHeaderRight" type="text" placeholder="e.g. {{date}}">
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="hf-content-group">
+                        <legend>Footer</legend>
+                        <div class="hf-inputs-row">
+                            <label>
+                                <span class="hf-input-label">Left</span>
+                                <input id="hfFooterLeft" type="text" placeholder="e.g. Author Name">
+                            </label>
+                            <label>
+                                <span class="hf-input-label">Center</span>
+                                <input id="hfFooterCenter" type="text" placeholder="e.g. Page {{pageNumber}} of {{totalPages}}">
+                            </label>
+                            <label>
+                                <span class="hf-input-label">Right</span>
+                                <input id="hfFooterRight" type="text" placeholder="e.g. Draft">
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <label class="hf-checkbox">
+                        <input id="hfManualSkipFirst" type="checkbox">
+                        <span>Skip header/footer on first page</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="hf-modal-actions">
+                <button id="hfApplyBtn" type="button">Apply</button>
+                <button id="hfCancelBtn" type="button">Cancel</button>
             </div>
         </div>
     </div>

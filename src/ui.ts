@@ -120,6 +120,26 @@ export class UIController {
   private helpModalBackdrop: HTMLElement;
   private helpModalCloseBtn: HTMLButtonElement;
 
+  // Header/Footer modal elements
+  private headerFooterBtn: HTMLButtonElement;
+  private hfModalBackdrop: HTMLElement;
+  private hfModalCloseBtn: HTMLButtonElement;
+  private hfModeNone: HTMLInputElement;
+  private hfModeAuto: HTMLInputElement;
+  private hfModeManual: HTMLInputElement;
+  private hfAutoSection: HTMLElement;
+  private hfManualSection: HTMLElement;
+  private hfAutoSkipFirst: HTMLInputElement;
+  private hfHeaderLeft: HTMLInputElement;
+  private hfHeaderCenter: HTMLInputElement;
+  private hfHeaderRight: HTMLInputElement;
+  private hfFooterLeft: HTMLInputElement;
+  private hfFooterCenter: HTMLInputElement;
+  private hfFooterRight: HTMLInputElement;
+  private hfManualSkipFirst: HTMLInputElement;
+  private hfApplyBtn: HTMLButtonElement;
+  private hfCancelBtn: HTMLButtonElement;
+
   private currentMathMode: MathRenderMode = 'html';
   private currentTheme: ThemeMode = 'dark';
   private isSidebarCollapsed = false;
@@ -140,6 +160,8 @@ export class UIController {
   private previewScrollRevision = 0;
   private editorScrollRevision = 0;
   private ignorePreviewScrollRevisionUntilMs = 0;
+  private canvasHighlightOverlay: HTMLElement | null = null;
+  private canvasHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly minSplitPercent = 20;
   private readonly maxSplitPercent = 80;
@@ -153,11 +175,25 @@ export class UIController {
   private isExportModalOpen = false;
   private isExporting = false;
   private isHelpModalOpen = false;
+  private isHfModalOpen = false;
   private exportContext: ExportModalContext = {
     activeFilename: 'Untitled.md',
     totalFiles: 1,
     isApiAvailable: true,
   };
+
+  // Header/Footer configuration
+  private hfMode: 'none' | 'auto' | 'manual' = 'none';
+  private hfConfig = {
+    headerLeft: '',
+    headerCenter: '',
+    headerRight: '',
+    footerLeft: '',
+    footerCenter: '',
+    footerRight: '',
+    skipFirstPage: false,
+  };
+  private documentTitle = 'Untitled';
 
   // Callbacks
   private fileUploadCallback?: (files: UploadedMarkdownFile[]) => void;
@@ -171,6 +207,7 @@ export class UIController {
   private previewSourceLineSelectCallback?: (lineNumber: number) => void;
   private mathModeChangeCallback?: (mode: MathRenderMode) => void;
   private settingsChangeCallback?: () => void;
+  private headerFooterChangeCallback?: () => void;
 
   private readonly onDividerPointerMove = (event: PointerEvent): void => {
     if (!this.isDraggingDivider || this.isStackedLayout()) {
@@ -255,6 +292,26 @@ export class UIController {
     this.exportDismissBtn = this.requireElement<HTMLButtonElement>('exportDismissBtn');
     this.helpModalBackdrop = this.requireElement<HTMLElement>('helpModalBackdrop');
     this.helpModalCloseBtn = this.requireElement<HTMLButtonElement>('helpModalCloseBtn');
+
+    // Header/Footer modal elements
+    this.headerFooterBtn = this.requireElement<HTMLButtonElement>('headerFooterBtn');
+    this.hfModalBackdrop = this.requireElement<HTMLElement>('headerFooterModalBackdrop');
+    this.hfModalCloseBtn = this.requireElement<HTMLButtonElement>('hfModalCloseBtn');
+    this.hfModeNone = this.requireElement<HTMLInputElement>('hfModeNone');
+    this.hfModeAuto = this.requireElement<HTMLInputElement>('hfModeAuto');
+    this.hfModeManual = this.requireElement<HTMLInputElement>('hfModeManual');
+    this.hfAutoSection = this.requireElement<HTMLElement>('hfAutoSection');
+    this.hfManualSection = this.requireElement<HTMLElement>('hfManualSection');
+    this.hfAutoSkipFirst = this.requireElement<HTMLInputElement>('hfAutoSkipFirst');
+    this.hfHeaderLeft = this.requireElement<HTMLInputElement>('hfHeaderLeft');
+    this.hfHeaderCenter = this.requireElement<HTMLInputElement>('hfHeaderCenter');
+    this.hfHeaderRight = this.requireElement<HTMLInputElement>('hfHeaderRight');
+    this.hfFooterLeft = this.requireElement<HTMLInputElement>('hfFooterLeft');
+    this.hfFooterCenter = this.requireElement<HTMLInputElement>('hfFooterCenter');
+    this.hfFooterRight = this.requireElement<HTMLInputElement>('hfFooterRight');
+    this.hfManualSkipFirst = this.requireElement<HTMLInputElement>('hfManualSkipFirst');
+    this.hfApplyBtn = this.requireElement<HTMLButtonElement>('hfApplyBtn');
+    this.hfCancelBtn = this.requireElement<HTMLButtonElement>('hfCancelBtn');
 
     this.setupEventListeners();
     this.applySettings();
@@ -380,6 +437,25 @@ export class UIController {
   }
 
   /**
+   * Gets the current preview zoom level.
+   */
+  getPreviewZoomLevel(): number {
+    return this.zoomLevel;
+  }
+
+  /**
+   * Converts a zoomed canvas Y coordinate from pointer events into unscaled canvas space.
+   */
+  toUnscaledCanvasY(canvasY: number): number {
+    const zoomLevel = this.getPreviewZoomLevel();
+    if (!Number.isFinite(canvasY) || zoomLevel <= 0) {
+      return 0;
+    }
+
+    return canvasY / zoomLevel;
+  }
+
+  /**
    * Scrolls preview to the closest rendered block for a given markdown line.
    * Returns true when a matching block was found.
    */
@@ -400,6 +476,68 @@ export class UIController {
     }
     this.rememberEditorPulseState(target);
     return true;
+  }
+
+  /**
+   * Scrolls the preview viewport to a specific unscaled Y position on the canvas.
+   * Used for bidirectional scroll sync with the editor.
+   */
+  scrollPreviewToY(canvasY: number): void {
+    // Convert from unscaled canvas coordinates into the viewport's scaled scroll coordinates.
+    const scaledCanvasY = canvasY * this.getPreviewZoomLevel();
+
+    // Get the canvas container's offset from the viewport's scroll origin.
+    // This accounts for viewport padding.
+    const containerOffsetTop = this.previewContainer.offsetTop;
+
+    // The actual scroll position is: scaled canvas position + container offset.
+    // Subtract the focus offset so the target appears near the top with some breathing room.
+    const targetScrollTop = Math.max(0, containerOffsetTop + scaledCanvasY - this.previewFocusTopOffsetPx);
+
+    this.ignorePreviewScrollRevisionUntilMs = Date.now() + 850;
+    this.previewViewport.scrollTo({
+      top: targetScrollTop,
+      behavior: 'smooth',
+    });
+  }
+
+  /**
+   * Shows a temporary highlight overlay on the canvas at the specified position.
+   * Used to indicate which block corresponds to the editor cursor.
+   */
+  highlightCanvasRegion(y: number, height: number): void {
+    // Create overlay if it doesn't exist
+    if (!this.canvasHighlightOverlay) {
+      this.canvasHighlightOverlay = document.createElement('div');
+      this.canvasHighlightOverlay.className = 'canvas-highlight-overlay';
+      this.previewContainer.style.position = 'relative';
+      this.previewContainer.appendChild(this.canvasHighlightOverlay);
+    }
+
+    // Position the overlay
+    const overlay = this.canvasHighlightOverlay;
+    overlay.style.position = 'absolute';
+    overlay.style.left = '0';
+    overlay.style.right = '0';
+    overlay.style.top = `${y}px`;
+    overlay.style.height = `${Math.max(4, height)}px`;
+    overlay.style.pointerEvents = 'none';
+    overlay.style.zIndex = '10';
+    
+    // Reset animation
+    overlay.classList.remove('active');
+    void overlay.offsetWidth; // Force reflow
+    overlay.classList.add('active');
+
+    // Clear previous timer
+    if (this.canvasHighlightTimer) {
+      clearTimeout(this.canvasHighlightTimer);
+    }
+
+    // Remove highlight after animation
+    this.canvasHighlightTimer = setTimeout(() => {
+      overlay.classList.remove('active');
+    }, 1500);
   }
 
   renderDocumentList(items: DocumentListItem[]): void {
@@ -721,6 +859,12 @@ export class UIController {
       if (event.key === 'Escape' && this.isHelpModalOpen) {
         event.preventDefault();
         this.closeHelpModal();
+        return;
+      }
+
+      if (event.key === 'Escape' && this.isHfModalOpen) {
+        event.preventDefault();
+        this.closeHfModal();
       }
     });
 
@@ -755,6 +899,34 @@ export class UIController {
     this.helpToggleBtn.addEventListener('click', () => {
       this.openHelpModal();
     });
+
+    // Header/Footer modal event listeners
+    this.headerFooterBtn.addEventListener('click', () => {
+      this.openHfModal();
+    });
+
+    this.hfModalCloseBtn.addEventListener('click', () => {
+      this.closeHfModal();
+    });
+
+    this.hfCancelBtn.addEventListener('click', () => {
+      this.closeHfModal();
+    });
+
+    this.hfModalBackdrop.addEventListener('click', (event) => {
+      if (event.target === this.hfModalBackdrop) {
+        this.closeHfModal();
+      }
+    });
+
+    this.hfApplyBtn.addEventListener('click', () => {
+      this.applyHfSettings();
+      this.closeHfModal();
+    });
+
+    this.hfModeNone.addEventListener('change', () => this.updateHfSections());
+    this.hfModeAuto.addEventListener('change', () => this.updateHfSections());
+    this.hfModeManual.addEventListener('change', () => this.updateHfSections());
 
     this.fitWidthBtn.addEventListener('click', () => {
       this.zoomMode = 'fit-width';
@@ -919,6 +1091,113 @@ export class UIController {
     this.helpModalBackdrop.hidden = true;
     document.body.classList.remove('help-modal-open');
     this.isHelpModalOpen = false;
+  }
+
+  private openHfModal(): void {
+    // Populate form with current settings
+    this.hfModeNone.checked = this.hfMode === 'none';
+    this.hfModeAuto.checked = this.hfMode === 'auto';
+    this.hfModeManual.checked = this.hfMode === 'manual';
+    
+    this.hfAutoSkipFirst.checked = this.hfConfig.skipFirstPage;
+    this.hfManualSkipFirst.checked = this.hfConfig.skipFirstPage;
+    this.hfHeaderLeft.value = this.hfConfig.headerLeft;
+    this.hfHeaderCenter.value = this.hfConfig.headerCenter;
+    this.hfHeaderRight.value = this.hfConfig.headerRight;
+    this.hfFooterLeft.value = this.hfConfig.footerLeft;
+    this.hfFooterCenter.value = this.hfConfig.footerCenter;
+    this.hfFooterRight.value = this.hfConfig.footerRight;
+    
+    this.updateHfSections();
+    
+    this.hfModalBackdrop.hidden = false;
+    document.body.classList.add('hf-modal-open');
+    this.isHfModalOpen = true;
+  }
+
+  private closeHfModal(): void {
+    this.hfModalBackdrop.hidden = true;
+    document.body.classList.remove('hf-modal-open');
+    this.isHfModalOpen = false;
+  }
+
+  private updateHfSections(): void {
+    if (this.hfModeNone.checked) {
+      this.hfAutoSection.hidden = true;
+      this.hfManualSection.hidden = true;
+    } else if (this.hfModeAuto.checked) {
+      this.hfAutoSection.hidden = false;
+      this.hfManualSection.hidden = true;
+    } else {
+      this.hfAutoSection.hidden = true;
+      this.hfManualSection.hidden = false;
+    }
+  }
+
+  private applyHfSettings(): void {
+    if (this.hfModeNone.checked) {
+      this.hfMode = 'none';
+      this.hfConfig.skipFirstPage = false;
+    } else if (this.hfModeAuto.checked) {
+      this.hfMode = 'auto';
+      this.hfConfig.skipFirstPage = this.hfAutoSkipFirst.checked;
+      // Auto mode: set predefined values
+      this.hfConfig.headerLeft = this.documentTitle;
+      this.hfConfig.headerCenter = '';
+      this.hfConfig.headerRight = '{{date}}';
+      this.hfConfig.footerLeft = '';
+      this.hfConfig.footerCenter = 'Page {{pageNumber}} of {{totalPages}}';
+      this.hfConfig.footerRight = '';
+    } else {
+      this.hfMode = 'manual';
+      this.hfConfig.skipFirstPage = this.hfManualSkipFirst.checked;
+      this.hfConfig.headerLeft = this.hfHeaderLeft.value;
+      this.hfConfig.headerCenter = this.hfHeaderCenter.value;
+      this.hfConfig.headerRight = this.hfHeaderRight.value;
+      this.hfConfig.footerLeft = this.hfFooterLeft.value;
+      this.hfConfig.footerCenter = this.hfFooterCenter.value;
+      this.hfConfig.footerRight = this.hfFooterRight.value;
+    }
+    
+    this.headerFooterChangeCallback?.();
+  }
+
+  /**
+   * Sets the document title for auto header/footer mode.
+   */
+  setDocumentTitle(title: string): void {
+    this.documentTitle = title;
+  }
+
+  /**
+   * Gets the current header/footer configuration.
+   * Returns undefined if mode is 'none'.
+   */
+  getHeaderFooterConfig(): { header?: { left?: string; center?: string; right?: string }; footer?: { left?: string; center?: string; right?: string }; skipFirstPage?: boolean } | undefined {
+    if (this.hfMode === 'none') {
+      return undefined;
+    }
+    
+    return {
+      header: {
+        left: this.hfConfig.headerLeft || undefined,
+        center: this.hfConfig.headerCenter || undefined,
+        right: this.hfConfig.headerRight || undefined,
+      },
+      footer: {
+        left: this.hfConfig.footerLeft || undefined,
+        center: this.hfConfig.footerCenter || undefined,
+        right: this.hfConfig.footerRight || undefined,
+      },
+      skipFirstPage: this.hfConfig.skipFirstPage,
+    };
+  }
+
+  /**
+   * Sets the callback for header/footer changes.
+   */
+  onHeaderFooterChange(callback: () => void): void {
+    this.headerFooterChangeCallback = callback;
   }
 
   private toggleSidebar(): void {
