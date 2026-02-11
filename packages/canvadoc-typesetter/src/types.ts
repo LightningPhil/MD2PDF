@@ -44,11 +44,15 @@ export type MarginConfig = MarginPreset | MarginPt;
 
 /**
  * Header/Footer content configuration.
- * Content is parsed as simple markdown (text only, no block elements).
+ * Content is parsed as inline markdown (no block elements).
+ * Supported inline features: emphasis, strong, strikethrough, inline code, links/autolinks.
  * 
  * Supported placeholders:
  * - {{pageNumber}} - Current page number (1-based)
  * - {{totalPages}} - Total number of pages
+ * - {{pageNumber:roman}} / {{totalPages:roman}} - Uppercase Roman numerals
+ * - {{pageNumber:lower-roman}} / {{totalPages:lower-roman}} - Lowercase Roman numerals
+ * - {{pageNumber:padN}} / {{totalPages:padN}} - Zero-padded decimal width N (e.g. pad3)
  * - {{date}} - Current date in ISO format (YYYY-MM-DD)
  * - {{date:FORMAT}} - Date with custom format (e.g., {{date:DD/MM/YYYY}})
  * 
@@ -89,6 +93,20 @@ export type HeaderFooterConfig = {
   skipFirstPage?: boolean;
   /** Include a separator line between header/footer and content. Default: false */
   showSeparator?: boolean;
+  /**
+   * Distance from top page edge to header text baseline in points.
+   * Default: auto-calculated to center header in top margin.
+   */
+  headerMarginPt?: number;
+  /**
+   * Distance from bottom page edge to footer text baseline in points.
+   * Default: auto-calculated to center footer in bottom margin.
+   */
+  footerMarginPt?: number;
+  /** Thickness of separator line in points. Default: 0.5 */
+  separatorWidthPt?: number;
+  /** Gap between separator line and header/footer text in points. Default: 4 */
+  separatorGapPt?: number;
 };
 
 /**
@@ -138,6 +156,13 @@ export type TypesetFeatureOptions = {
     /** Draw math debug overlays (boxes/baselines/guides). Default: false */
     debugOverlays?: boolean;
   };
+  /** Emoji handling options */
+  emoji?: {
+    /** Keep emoji glyphs or suppress them during layout. Default: "preserve" */
+    mode?: "preserve" | "suppress";
+    /** Replacement text used when mode is "suppress". Default: "~" */
+    replacement?: string;
+  };
   /** Typography and line-breaking options */
   typography?: {
     /** Enable deterministic hyphenation. Default: false */
@@ -185,6 +210,10 @@ export type NormalizedTypesetFeatures = {
     accents: boolean;
     bigOperators: boolean;
     debugOverlays: boolean;
+  };
+  emoji: {
+    mode: "preserve" | "suppress";
+    replacement: string;
   };
   typography: {
     hyphenation: boolean;
@@ -296,6 +325,10 @@ export type PdfOptions = {
   keywords?: string[];
   /** Use object stream compression. Default: true */
   compress?: boolean;
+  /** Subset embedded custom fonts to used glyphs. Default: true */
+  fontSubsetting?: boolean;
+  /** Render emoji glyphs as cached PNG assets instead of embedded fonts. Default: "font" */
+  emojiRenderMode?: "font" | "imageCache";
 };
 
 /**
@@ -311,23 +344,6 @@ export type TypesetDiagnostics = {
 };
 
 /**
- * Entry mapping a source line range to a rendered position.
- * Used for bidirectional scroll sync between editor and canvas.
- */
-export type SourceMappingEntry = {
-  /** First source line (1-based) */
-  sourceLineStart: number;
-  /** Last source line (1-based, inclusive) */
-  sourceLineEnd: number;
-  /** Zero-based page index where the block starts */
-  pageIndex: number;
-  /** Y position in points from top of page where block starts */
-  yStartPt: number;
-  /** Y position in points from top of page where block ends */
-  yEndPt: number;
-};
-
-/**
  * Result of the typesetting process.
  */
 export type TypesetResult = {
@@ -335,8 +351,6 @@ export type TypesetResult = {
   pages: PageLayout[];
   /** Diagnostic information (warnings, errors, timings) */
   diagnostics: TypesetDiagnostics;
-  /** Source line to rendered position mapping for scroll sync */
-  sourceMapping?: SourceMappingEntry[];
 };
 
 /**
@@ -402,7 +416,7 @@ export type GlyphRunOp = {
   yBaselinePt: number;
   /** Text content */
   text: string;
-  /** Optional per-character x offsets for kerning/positioning */
+  /** Optional per-grapheme x offsets for kerning/positioning */
   xOffsetsPt?: number[];
   /** Optional source mapping for debugging */
   sourceSpan?: SourceSpan;
@@ -557,6 +571,36 @@ export interface Typesetter {
 }
 
 /**
+ * Stable capability flags that integrators can inspect at runtime.
+ */
+export type TypesetterCapabilities = {
+  /** Source spans are emitted on text/link ops for source-to-layout mapping. */
+  sourceMapping: boolean;
+  /** Supported header/footer placeholders in string templates. */
+  headerFooterPlaceholders: readonly string[];
+  /** Emoji width/metrics behavior when no emoji font assets are available. */
+  emojiFallback: "heuristicMetrics";
+  /** Emoji suppression/replacement mode is available in TypesetOptions.features.emoji. */
+  emojiSuppression: boolean;
+  /** Full-color emoji output depends on external fallback font assets. */
+  colorEmojiRequiresFontAssets: boolean;
+  /** PDF renderer subsets custom fonts by default. */
+  pdfFontSubsetting: boolean;
+  /** PDF renderer can rasterize emoji once and reuse image assets per unique grapheme. */
+  pdfEmojiImageCache: boolean;
+  /** Rendering targets exposed through the public API. */
+  renderTargets: readonly ("canvas" | "pdf")[];
+};
+
+/**
+ * Runtime metadata exposed through the package entrypoint.
+ */
+export type TypesetterRuntimeMetadata = {
+  version: string;
+  capabilities: TypesetterCapabilities;
+};
+
+/**
  * Resolved page dimensions with computed content area.
  * @internal
  */
@@ -585,6 +629,14 @@ export type NormalizedHeaderFooter = {
   fontSizePt: number;
   skipFirstPage: boolean;
   showSeparator: boolean;
+  /** Distance from top page edge to header baseline */
+  headerMarginPt: number;
+  /** Distance from bottom page edge to footer baseline */
+  footerMarginPt: number;
+  /** Separator line thickness */
+  separatorWidthPt: number;
+  /** Gap between separator and text */
+  separatorGapPt: number;
 };
 
 /**

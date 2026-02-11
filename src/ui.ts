@@ -1,3 +1,5 @@
+import type { HeaderFooterConfig, EmojiMode } from './typesetter.js';
+
 // Math render mode - kept for backwards compatibility in UI, though typesetter handles math natively
 export type MathRenderMode = 'html' | 'svg';
 
@@ -80,6 +82,7 @@ export class UIController {
   private fontSizeSelect: HTMLSelectElement;
   private marginSelect: HTMLSelectElement;
   private pageSizeSelect: HTMLSelectElement;
+  private emojiModeSelect: HTMLSelectElement;
 
   private themeToggleBtn: HTMLButtonElement;
   private helpToggleBtn: HTMLButtonElement;
@@ -254,6 +257,7 @@ export class UIController {
     this.fontSizeSelect = this.requireElement<HTMLSelectElement>('fontSizeSelect');
     this.marginSelect = this.requireElement<HTMLSelectElement>('marginSelect');
     this.pageSizeSelect = this.requireElement<HTMLSelectElement>('pageSizeSelect');
+    this.emojiModeSelect = this.requireElement<HTMLSelectElement>('emojiModeSelect');
 
     this.themeToggleBtn = this.requireElement<HTMLButtonElement>('themeToggle');
     this.helpToggleBtn = this.requireElement<HTMLButtonElement>('helpToggleBtn');
@@ -421,6 +425,10 @@ export class UIController {
 
   getMargin(): number {
     return parseFloat(this.marginSelect.value || '20');
+  }
+
+  getEmojiMode(): EmojiMode {
+    return this.emojiModeSelect.value === 'suppress' ? 'suppress' : 'preserve';
   }
 
   /**
@@ -892,6 +900,11 @@ export class UIController {
       this.settingsChangeCallback?.();
     });
 
+    this.emojiModeSelect.addEventListener('change', () => {
+      this.applySettings();
+      this.settingsChangeCallback?.();
+    });
+
     this.themeToggleBtn.addEventListener('click', () => {
       this.toggleTheme();
     });
@@ -1173,7 +1186,7 @@ export class UIController {
    * Gets the current header/footer configuration.
    * Returns undefined if mode is 'none'.
    */
-  getHeaderFooterConfig(): { header?: { left?: string; center?: string; right?: string }; footer?: { left?: string; center?: string; right?: string }; skipFirstPage?: boolean } | undefined {
+  getHeaderFooterConfig(): HeaderFooterConfig | undefined {
     if (this.hfMode === 'none') {
       return undefined;
     }

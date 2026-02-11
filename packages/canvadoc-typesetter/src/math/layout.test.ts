@@ -1,5 +1,5 @@
-﻿import { describe, it, expect, vi } from 'vitest';
-import { layoutMathExpression, type MathBox, type MathLayoutContext } from './layout';
+import { describe, it, expect } from 'vitest';
+import { layoutMathExpression, type MathLayoutContext } from './layout';
 import type { DrawOp } from '../types';
 
 /**
@@ -456,5 +456,6 @@ describe('layoutMathExpression', () => {
     });
   });
 });
+
 
 

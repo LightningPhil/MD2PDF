@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseMarkdownBlocks } from './markdown';
 import { parseMath } from './math/parser';
-import type { MathNode } from './math/ast';
-import type { MarkdownBlock } from './markdown';
 
 /**
  * Snapshot/parity tests for layout output structure.

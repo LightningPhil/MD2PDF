@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   PDFArray,
@@ -148,5 +148,66 @@ describe("PDF renderer", () => {
     const underlineYPdf = Number(cmMatches[0][2]);
     expect(underlineYPdf).toBeCloseTo(pageHeightPt - (underlineTopDownPt + 1), 3);
     expect(underlineYPdf).toBeLessThan(textYPdf);
+  });
+
+  it("embeds only fonts referenced by draw ops", async () => {
+    const getFontBytes = vi.fn((fontId: string) => {
+      if (fontId === "used") {
+        return new Uint8Array(0);
+      }
+      throw new Error(`Unexpected font lookup: ${fontId}`);
+    });
+
+    const metrics = {
+      getFontIds: () => ["used", "unused"],
+      getFontBytes,
+      getAdvanceWidth: () => 0
+    } as unknown as FontMetricsProvider;
+
+    const pages: PageLayout[] = [
+      {
+        index: 0,
+        widthPt: 120,
+        heightPt: 120,
+        ops: [
+          {
+            kind: "glyph",
+            char: "A",
+            fontId: "used",
+            fontSizePt: 12,
+            xPt: 20,
+            yBaselinePt: 40
+          }
+        ]
+      }
+    ];
+
+    await renderPagesToPdf(pages, metrics);
+
+    expect(getFontBytes).toHaveBeenCalledTimes(1);
+    expect(getFontBytes).toHaveBeenCalledWith("used");
+  });
+
+  it("falls back to font rendering when emoji image cache is unavailable", async () => {
+    const typesetter = createTestTypesetter();
+    const result = await typesetter.typeset("Emoji \u{1F600}");
+    const pdfBytes = await typesetter.renderToPdf(result.pages, {
+      emojiRenderMode: "imageCache"
+    });
+    const pdf = await PDFDocument.load(pdfBytes);
+    const page = pdf.getPages()[0];
+
+    const contents = page.node.lookup(PDFName.of("Contents"));
+    const streams: PDFRawStream[] = [];
+    if (contents instanceof PDFArray) {
+      for (let i = 0; i < contents.size(); i += 1) {
+        streams.push(contents.lookup(i, PDFRawStream));
+      }
+    } else if (contents instanceof PDFRawStream) {
+      streams.push(contents);
+    }
+
+    const decoded = streams.map((stream) => decodeContentsStream(stream)).join("\n");
+    expect(decoded.includes(" Tj") || decoded.includes(" TJ")).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createTypesetter } from "./index";
+import { splitGraphemes } from "./text/graphemes";
 import type { DrawOp, PageLayout, TypesetFeatureOptions, Typesetter } from "./types";
 
 function createTestTypesetter(features?: TypesetFeatureOptions): Typesetter {
@@ -127,5 +128,112 @@ describe("phase 3 layout integration", () => {
     expect(result.diagnostics.errors.some((msg) => msg.includes("Unsupported: \\newcommand"))).toBe(
       true
     );
+  });
+
+  it("keeps emoji grapheme clusters intact in glyph-run offsets", async () => {
+    const typesetter = createTestTypesetter();
+    const smile = "\u{1F600}";
+    const thumbsTone = "\u{1F44D}\u{1F3FD}";
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}";
+    const source = `Emoji line: ${smile} ${thumbsTone} ${family}`;
+    const result = await typesetter.typeset(source);
+    const runs = collectGlyphRuns(collectOps(result.pages));
+    const combined = runs.map((run) => run.text).join("");
+
+    expect(result.diagnostics.errors).toEqual([]);
+    expect(combined).toContain(smile);
+    expect(combined).toContain(thumbsTone);
+    expect(combined).toContain(family);
+
+    for (const run of runs) {
+      if (!run.xOffsetsPt) {
+        continue;
+      }
+      expect(run.xOffsetsPt.length).toBe(splitGraphemes(run.text).length);
+    }
+  });
+
+  it("uses consistent full-width advances for legacy emoji symbols", async () => {
+    const typesetter = createTestTypesetter();
+    const lightning = "\u26A1";
+    const sparkles = "\u2728";
+    const result = await typesetter.typeset(`A${lightning}B${sparkles}C`);
+    const runs = collectGlyphRuns(collectOps(result.pages));
+    const run = runs.find((entry) => entry.text.includes(lightning) && entry.text.includes(sparkles));
+
+    expect(run).toBeDefined();
+    expect(run!.xOffsetsPt).toBeDefined();
+
+    const graphemes = splitGraphemes(run!.text);
+    const lightningIndex = graphemes.indexOf(lightning);
+    const sparklesIndex = graphemes.indexOf(sparkles);
+    expect(lightningIndex).toBeGreaterThanOrEqual(0);
+    expect(sparklesIndex).toBeGreaterThanOrEqual(0);
+    expect(lightningIndex).toBeLessThan(graphemes.length - 1);
+    expect(sparklesIndex).toBeLessThan(graphemes.length - 1);
+
+    const xOffsets = run!.xOffsetsPt!;
+    const lightningAdvance = xOffsets[lightningIndex + 1] - xOffsets[lightningIndex];
+    const sparklesAdvance = xOffsets[sparklesIndex + 1] - xOffsets[sparklesIndex];
+    expect(lightningAdvance).toBeCloseTo(11, 3);
+    expect(sparklesAdvance).toBeCloseTo(11, 3);
+  });
+
+  it("keeps explicit emoji-adjacent spaces at normal width", async () => {
+    const typesetter = createTestTypesetter();
+    const lightning = "\u26A1";
+    const result = await typesetter.typeset(`${lightning} Energy`);
+    const runs = collectGlyphRuns(collectOps(result.pages));
+
+    const emojiRun = runs.find((entry) => entry.text.includes(lightning));
+    expect(emojiRun).toBeDefined();
+
+    const sameLineRuns = runs.filter(
+      (entry) => Math.abs(entry.yBaselinePt - emojiRun!.yBaselinePt) < 0.01
+    );
+    const spaceRun = sameLineRuns.find(
+      (entry) => entry.text.trim() === "" && entry.xPt > emojiRun!.xPt
+    );
+    expect(spaceRun).toBeDefined();
+
+    const wordRun = sameLineRuns.find(
+      (entry) => entry.text.startsWith("Energy") && entry.xPt > spaceRun!.xPt
+    );
+    expect(wordRun).toBeDefined();
+
+    const spaceAdvance = wordRun!.xPt - spaceRun!.xPt;
+    expect(spaceAdvance).toBeGreaterThan(2.5);
+    expect(spaceAdvance).toBeLessThan(4.5);
+  });
+
+  it("does not inject a space after emoji when source has none", async () => {
+    const typesetter = createTestTypesetter();
+    const lightning = "\u26A1";
+    const result = await typesetter.typeset(`${lightning}Energy`);
+    const runs = collectGlyphRuns(collectOps(result.pages));
+    const combined = runs.map((entry) => entry.text).join("");
+
+    expect(combined).toContain(`${lightning}Energy`);
+    expect(combined).not.toContain(`${lightning} Energy`);
+  });
+
+  it("uses full-width emoji advances when glyph metrics fall back", async () => {
+    const typesetter = createTestTypesetter();
+    const emoji = "\u{1F600}";
+    const result = await typesetter.typeset(`A${emoji}B`);
+    const runs = collectGlyphRuns(collectOps(result.pages));
+    const run = runs.find((entry) => entry.text.includes(emoji));
+
+    expect(run).toBeDefined();
+    expect(run!.xOffsetsPt).toBeDefined();
+
+    const graphemes = splitGraphemes(run!.text);
+    const emojiIndex = graphemes.indexOf(emoji);
+    expect(emojiIndex).toBeGreaterThanOrEqual(0);
+    expect(emojiIndex).toBeLessThan(graphemes.length - 1);
+
+    const xOffsets = run!.xOffsetsPt!;
+    const emojiAdvance = xOffsets[emojiIndex + 1] - xOffsets[emojiIndex];
+    expect(emojiAdvance).toBeCloseTo(11, 3);
   });
 });

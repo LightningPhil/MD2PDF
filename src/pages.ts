@@ -8,6 +8,7 @@ import {
   type PageLayout,
   type PageSizeKey,
   type HeaderFooterConfig,
+  type EmojiMode,
   type SourceMappingEntry,
 } from './typesetter.js';
 
@@ -21,6 +22,7 @@ export interface TypesetterConfig {
   marginMm: number;
   fontSizePt: number;
   headerFooter?: HeaderFooterConfig;
+  emojiMode?: EmojiMode;
 }
 
 export class PageManager {
@@ -36,6 +38,7 @@ export class PageManager {
   private pendingRender: boolean = false;
   private zoom: number = 1;
   private headerFooter: HeaderFooterConfig | undefined = undefined;
+  private emojiMode: EmojiMode = 'preserve';
   private documentTitle: string = 'Untitled';
   private renderRevision: number = 0;
 
@@ -177,7 +180,10 @@ export class PageManager {
    */
   async exportPdf(title?: string): Promise<Uint8Array> {
     const config = this.getConfig();
-    return generatePdf(this.pages, config, { title });
+    return generatePdf(this.pages, config, {
+      title,
+      fontSubsetting: true,
+    });
   }
 
   /**
@@ -206,6 +212,7 @@ export class PageManager {
       marginMm: this.marginMm,
       fontSizePt: pxToPt(this.fontSizePx),
       headerFooter: this.headerFooter,
+      emojiMode: this.emojiMode,
     };
   }
 
@@ -236,6 +243,23 @@ export class PageManager {
    */
   getHeaderFooter(): HeaderFooterConfig | undefined {
     return this.headerFooter;
+  }
+
+  /**
+   * Sets emoji handling mode for layout/rendering.
+   */
+  setEmojiMode(mode: EmojiMode): void {
+    if (this.emojiMode !== mode) {
+      this.emojiMode = mode;
+      void this.render();
+    }
+  }
+
+  /**
+   * Gets current emoji handling mode.
+   */
+  getEmojiMode(): EmojiMode {
+    return this.emojiMode;
   }
 
   private async render(): Promise<void> {

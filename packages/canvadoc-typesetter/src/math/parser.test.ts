@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { parseMath } from './parser';
-import type { MathNode } from './ast';
 
 describe('parseMath', () => {
   describe('symbols', () => {

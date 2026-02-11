@@ -13,6 +13,14 @@
 import opentype from "opentype.js";
 
 import type { FontSpec } from "./types";
+import { splitGraphemes } from "./text/graphemes";
+import { getRenderableGraphemeParts, shouldUseEmojiMetricsFallback } from "./text/emoji";
+
+type ParsedGlyph = {
+  advanceWidth?: number;
+  yMin?: number;
+  yMax?: number;
+};
 
 type ParsedOpenTypeFont = {
   unitsPerEm: number;
@@ -30,11 +38,8 @@ type ParsedOpenTypeFont = {
     };
   };
   charToGlyphIndex?: (char: string) => number;
-  charToGlyph: (char: string) => {
-    advanceWidth?: number;
-    yMin?: number;
-    yMax?: number;
-  };
+  charToGlyph: (char: string) => ParsedGlyph;
+  stringToGlyphs?: (text: string) => ParsedGlyph[];
 };
 
 type GlyphMetricsAtEm = {
@@ -42,6 +47,10 @@ type GlyphMetricsAtEm = {
   ascentAtEm: number;
   descentAtEm: number;
 };
+
+const EMOJI_ADVANCE_AT_EM = 1;
+const EMOJI_ASCENT_AT_EM = 0.86;
+const EMOJI_DESCENT_AT_EM = 0.14;
 
 type RegisteredFont = {
   spec: FontSpec;
@@ -231,16 +240,21 @@ export class FontMetricsProvider {
 
   canDisplayChar(fontId: string, char: string): boolean {
     const font = this.requireFont(fontId);
+    const parts = getRenderableGraphemeParts(char);
+    const effectiveParts = parts.length > 0 ? parts : char ? [char] : [];
+
+    if (effectiveParts.length === 0) {
+      return true;
+    }
+
     if (!font.parsed) {
-      return char.charCodeAt(0) < 128;
+      if (shouldUseEmojiMetricsFallback(char)) {
+        return false;
+      }
+      return effectiveParts.every((part) => part.charCodeAt(0) < 128);
     }
 
-    if (typeof font.parsed.charToGlyphIndex === "function") {
-      return font.parsed.charToGlyphIndex(char) > 0;
-    }
-
-    const glyph = font.parsed.charToGlyph(char);
-    return (glyph?.advanceWidth ?? 0) > 0;
+    return effectiveParts.every((part) => this.canDisplayPart(font.parsed!, part));
   }
 
   private getGlyphMetricsAtEm(fontId: string, char: string): GlyphMetricsAtEm {
@@ -250,18 +264,40 @@ export class FontMetricsProvider {
       return cached;
     }
 
+    const shouldUseEmojiFallback = shouldUseEmojiMetricsFallback(char);
+    const hasGlyphSupport = this.canDisplayChar(fontId, char);
+
     let widthAtEm = 0.6;
     let ascentAtEm = font.ascentAtEm;
     let descentAtEm = font.descentAtEm;
 
-    if (font.parsed) {
-      const glyph = font.parsed.charToGlyph(char);
-      widthAtEm = (glyph?.advanceWidth ?? font.parsed.unitsPerEm * 0.6) / font.parsed.unitsPerEm;
-      if (typeof glyph?.yMax === "number" && Number.isFinite(glyph.yMax) && glyph.yMax > 0) {
-        ascentAtEm = glyph.yMax / font.parsed.unitsPerEm;
-      }
-      if (typeof glyph?.yMin === "number" && Number.isFinite(glyph.yMin) && glyph.yMin < 0) {
-        descentAtEm = -glyph.yMin / font.parsed.unitsPerEm;
+    if (shouldUseEmojiFallback && !hasGlyphSupport) {
+      ascentAtEm = Math.max(ascentAtEm, EMOJI_ASCENT_AT_EM);
+      descentAtEm = Math.max(descentAtEm, EMOJI_DESCENT_AT_EM);
+    } else if (font.parsed) {
+      const glyphs = this.getGlyphSequence(font.parsed, char);
+      if (glyphs.length > 0) {
+        let totalAdvance = 0;
+        let maxY = Number.NEGATIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+
+        for (const glyph of glyphs) {
+          totalAdvance += glyph.advanceWidth ?? 0;
+          if (typeof glyph.yMax === "number" && Number.isFinite(glyph.yMax)) {
+            maxY = Math.max(maxY, glyph.yMax);
+          }
+          if (typeof glyph.yMin === "number" && Number.isFinite(glyph.yMin)) {
+            minY = Math.min(minY, glyph.yMin);
+          }
+        }
+
+        widthAtEm = (totalAdvance || font.parsed.unitsPerEm * 0.6) / font.parsed.unitsPerEm;
+        if (maxY > 0) {
+          ascentAtEm = maxY / font.parsed.unitsPerEm;
+        }
+        if (minY < 0) {
+          descentAtEm = -minY / font.parsed.unitsPerEm;
+        }
       }
     } else if (char === " ") {
       widthAtEm = 0.33;
@@ -269,6 +305,13 @@ export class FontMetricsProvider {
       widthAtEm = 0.35;
     } else if (/[mwMW@#]/.test(char)) {
       widthAtEm = 0.9;
+    }
+
+    if (shouldUseEmojiFallback) {
+      // Keep emoji spacing deterministic: all emoji-like graphemes consume one cell.
+      widthAtEm = EMOJI_ADVANCE_AT_EM;
+      ascentAtEm = Math.max(ascentAtEm, EMOJI_ASCENT_AT_EM);
+      descentAtEm = Math.max(descentAtEm, EMOJI_DESCENT_AT_EM);
     }
 
     const metrics: GlyphMetricsAtEm = {
@@ -280,14 +323,39 @@ export class FontMetricsProvider {
     return metrics;
   }
 
+  private getGlyphSequence(parsed: ParsedOpenTypeFont, text: string): ParsedGlyph[] {
+    if (typeof parsed.stringToGlyphs === "function") {
+      try {
+        const glyphs = parsed.stringToGlyphs(text);
+        if (Array.isArray(glyphs) && glyphs.length > 0) {
+          return glyphs;
+        }
+      } catch {
+        // Fall through to deterministic per-code-point approximation.
+      }
+    }
+
+    const codePoints = Array.from(text);
+    return codePoints.map((part) => parsed.charToGlyph(part)).filter(Boolean);
+  }
+
   private getAdvanceWidthForResolvedFont(fontId: string, char: string, fontSizePt: number): number {
     return this.getGlyphMetricsAtEm(fontId, char).widthAtEm * fontSizePt;
   }
 
+  private canDisplayPart(parsed: ParsedOpenTypeFont, part: string): boolean {
+    if (typeof parsed.charToGlyphIndex === "function") {
+      return parsed.charToGlyphIndex(part) > 0;
+    }
+
+    const glyph = parsed.charToGlyph(part);
+    return (glyph?.advanceWidth ?? 0) > 0;
+  }
+
   getTextWidth(fontId: string, text: string, fontSizePt: number): number {
     let width = 0;
-    for (const char of text) {
-      width += this.getAdvanceWidth(fontId, char, fontSizePt);
+    for (const grapheme of splitGraphemes(text)) {
+      width += this.getAdvanceWidth(fontId, grapheme, fontSizePt);
     }
     return width;
   }

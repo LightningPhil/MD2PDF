@@ -55,6 +55,17 @@ Expected:
 - Math renders correctly in the canvas preview.
 - Matrix row breaks are preserved.
 
+### TS-03b: Emoji and grapheme rendering
+
+1. Enter content with surrogate-pair and joined emojis, for example: `😀`, `👨‍👩‍👧‍👦`, `🏳️‍🌈`, `👍🏽`.
+2. Use the same emojis in headings, paragraphs, list items, and table cells.
+3. Export to PDF and compare canvas vs PDF output.
+
+Expected:
+- Emojis render as complete grapheme clusters (no split boxes/partial glyphs).
+- Spacing/alignment remains stable around emoji sequences.
+- PDF output matches the canvas layout behavior.
+
 ## 3. Multi-file Workflow
 
 ### TS-04: Upload, list, rename, close
@@ -113,6 +124,20 @@ Expected:
 - PDF downloads automatically (no print dialog).
 - Filename is derived from the markdown filename.
 - PDF renders identically to canvas preview.
+
+### TS-09: Header/Footer rendering
+
+1. Open the Header/Footer dialog and test `Auto` mode.
+2. Confirm placeholders render in preview/PDF (`{{date}}`, `{{pageNumber}}`, `{{totalPages}}`).
+3. Switch to `Manual` mode and test inline markdown in header/footer text:
+   - `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`, and a link.
+4. Enable skip-first-page and verify first page behavior.
+5. Export to PDF and compare with preview.
+
+Expected:
+- Header/footer text appears consistently on each page (respecting skip-first-page).
+- Inline markdown styling and link formatting in header/footer are rendered.
+- Placeholder values resolve correctly in preview and PDF.
 
 ## 6. Regression Checks
 

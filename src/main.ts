@@ -164,10 +164,12 @@ class MD2PDFApp {
     const pageSize = this.ui.getPageSize() as PageSizeKey;
     const fontSizePx = this.ui.getFontSize();
     const marginMm = this.ui.getMargin();
+    const emojiMode = this.ui.getEmojiMode();
 
     this.pageManager.setPageSize(pageSize);
     this.pageManager.setFontSize(fontSizePx);
     this.pageManager.setMargin(marginMm);
+    this.pageManager.setEmojiMode(emojiMode);
   }
 
   private initializeDocuments(): void {

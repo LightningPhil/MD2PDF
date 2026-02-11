@@ -91,6 +91,10 @@ export function createDefaultOptions(overrides: TypesetOptions): TypesetOptions 
       bigOperators: true,
       debugOverlays: false
     },
+    emoji: {
+      mode: "preserve" as const,
+      replacement: "~"
+    },
     typography: {
       hyphenation: false,
       justification: false,
@@ -128,7 +132,11 @@ export function createDefaultOptions(overrides: TypesetOptions): TypesetOptions 
       },
       fontSizePt: overrides.headerFooter?.fontSizePt ?? headerFooter.fontSizePt,
       skipFirstPage: overrides.headerFooter?.skipFirstPage ?? headerFooter.skipFirstPage,
-      showSeparator: overrides.headerFooter?.showSeparator ?? headerFooter.showSeparator
+      showSeparator: overrides.headerFooter?.showSeparator ?? headerFooter.showSeparator,
+      headerMarginPt: overrides.headerFooter?.headerMarginPt,
+      footerMarginPt: overrides.headerFooter?.footerMarginPt,
+      separatorWidthPt: overrides.headerFooter?.separatorWidthPt,
+      separatorGapPt: overrides.headerFooter?.separatorGapPt
     },
     typography: {
       baseFontSizePt:
@@ -173,6 +181,12 @@ export function createDefaultOptions(overrides: TypesetOptions): TypesetOptions 
         bigOperators: overrides.features?.math?.bigOperators ?? features.math.bigOperators,
         debugOverlays:
           overrides.features?.math?.debugOverlays ?? features.math.debugOverlays
+      },
+      emoji: {
+        mode: overrides.features?.emoji?.mode ?? features.emoji.mode,
+        replacement: sanitizeEmojiReplacement(
+          overrides.features?.emoji?.replacement ?? features.emoji.replacement
+        )
       },
       typography: {
         hyphenation:
@@ -221,7 +235,45 @@ export function normalizeOptions(options: TypesetOptions): NormalizedTypesetOpti
   const marginPt = resolveMargin(options.page.margin);
 
   // Resolve header/footer with defaults
-  const hfFontSizePt = options.headerFooter?.fontSizePt ?? 10;
+  const hfFontSizePt = sanitizeNumber(
+    options.headerFooter?.fontSizePt,
+    10,
+    { min: 4, max: 96 }
+  );
+  const separatorWidthPt = sanitizeNumber(
+    options.headerFooter?.separatorWidthPt,
+    0.5,
+    { min: 0, max: 12 }
+  );
+  const separatorGapPt = sanitizeNumber(
+    options.headerFooter?.separatorGapPt,
+    4,
+    { min: 0, max: 72 }
+  );
+  
+  // Calculate header/footer margin defaults if not specified
+  // Default: position text baseline so it's vertically centered in margin space,
+  // but at minimum 50% from page edge, accounting for text ascent (~70% of font size)
+  const defaultHeaderMargin = Math.max(
+    marginPt.top / 2 + hfFontSizePt * 0.35,
+    hfFontSizePt * 1.2
+  );
+  const defaultFooterMargin = Math.max(
+    marginPt.bottom / 2 - hfFontSizePt * 0.35,
+    hfFontSizePt * 0.5
+  );
+  
+  const headerMarginPt = sanitizeNumber(
+    options.headerFooter?.headerMarginPt,
+    defaultHeaderMargin,
+    { min: 0, max: heightPt }
+  );
+  const footerMarginPt = sanitizeNumber(
+    options.headerFooter?.footerMarginPt,
+    defaultFooterMargin,
+    { min: 0, max: heightPt }
+  );
+  
   const headerFooter = {
     header: {
       left: options.headerFooter?.header?.left ?? "",
@@ -235,27 +287,26 @@ export function normalizeOptions(options: TypesetOptions): NormalizedTypesetOpti
     },
     fontSizePt: hfFontSizePt,
     skipFirstPage: options.headerFooter?.skipFirstPage ?? false,
-    showSeparator: options.headerFooter?.showSeparator ?? false
+    showSeparator: options.headerFooter?.showSeparator ?? false,
+    headerMarginPt,
+    footerMarginPt,
+    separatorWidthPt,
+    separatorGapPt
   };
 
-  // Check if headers/footers have content
-  const hasHeader = headerFooter.header.left || headerFooter.header.center || headerFooter.header.right;
-  const hasFooter = headerFooter.footer.left || headerFooter.footer.center || headerFooter.footer.right;
-
-  // Reserve space for header/footer if content is present
-  // Header/footer line height plus separator gap
-  const headerSpace = hasHeader ? hfFontSizePt * 1.5 + (headerFooter.showSeparator ? 4 : 0) : 0;
-  const footerSpace = hasFooter ? hfFontSizePt * 1.5 + (headerFooter.showSeparator ? 4 : 0) : 0;
-
+  // Content area: headers/footers are positioned WITHIN the margins,
+  // so they do not affect the content area dimensions
   const contentXPt = marginPt.left;
-  const contentYPt = marginPt.top + headerSpace;
+  const contentYPt = marginPt.top;
   const contentWPt = widthPt - marginPt.left - marginPt.right;
-  const contentHPt = heightPt - marginPt.top - marginPt.bottom - headerSpace - footerSpace;
+  const contentHPt = heightPt - marginPt.top - marginPt.bottom;
 
-  // Header baseline Y is within top margin, positioned from margin top
-  const headerYPt = marginPt.top + hfFontSizePt;
-  // Footer baseline Y is within bottom margin, positioned from page bottom
-  const footerYPt = heightPt - marginPt.bottom + hfFontSizePt * 0.5;
+  // Header baseline Y: distance from TOP of page (positioned in top margin)
+  // headerMarginPt is the distance from top page edge to baseline
+  const headerYPt = headerMarginPt;
+  // Footer baseline Y: distance from TOP of page (positioned in bottom margin)
+  // footerMarginPt is the distance from bottom page edge to baseline
+  const footerYPt = heightPt - footerMarginPt;
 
   return {
     ...options,
@@ -276,6 +327,10 @@ export function normalizeOptions(options: TypesetOptions): NormalizedTypesetOpti
         accents: options.features?.math?.accents ?? true,
         bigOperators: options.features?.math?.bigOperators ?? true,
         debugOverlays: options.features?.math?.debugOverlays ?? false
+      },
+      emoji: {
+        mode: options.features?.emoji?.mode ?? "preserve",
+        replacement: sanitizeEmojiReplacement(options.features?.emoji?.replacement)
       },
       typography: {
         // Clampable controls get deterministic fallbacks to avoid unstable layout.
@@ -310,4 +365,22 @@ export function normalizeOptions(options: TypesetOptions): NormalizedTypesetOpti
       }
     }
   };
+}
+
+function sanitizeNumber(
+  value: number | undefined,
+  fallback: number,
+  bounds?: { min?: number; max?: number }
+): number {
+  const min = bounds?.min ?? Number.NEGATIVE_INFINITY;
+  const max = bounds?.max ?? Number.POSITIVE_INFINITY;
+  const numeric = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function sanitizeEmojiReplacement(value: string | undefined): string {
+  if (typeof value !== "string") {
+    return "~";
+  }
+  return value.length > 0 ? value : "~";
 }

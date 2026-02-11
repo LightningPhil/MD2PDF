@@ -14,12 +14,24 @@ import { renderPagesToCanvas } from "./renderers/canvas";
 import { renderPagesToPdf } from "./renderers/pdf";
 import type {
   CanvasViewOptions,
+  DrawOp,
   FontSpec,
+  HeaderFooterConfig,
+  MarginConfig,
+  MarginPt,
+  MarginPreset,
   PageLayout,
+  PageSize,
+  PageSizePreset,
   PdfOptions,
+  SourceSpan,
+  TypesetDiagnostics,
+  TypesetFeatureOptions,
   TypesetOptions,
   TypesetResult,
-  Typesetter
+  Typesetter,
+  TypesetterCapabilities,
+  TypesetterRuntimeMetadata
 } from "./types";
 
 const DEFAULT_VIEW: CanvasViewOptions = {
@@ -28,6 +40,48 @@ const DEFAULT_VIEW: CanvasViewOptions = {
   background: "white",
   mode: "stackedPages"
 };
+
+const HEADER_FOOTER_PLACEHOLDERS = Object.freeze([
+  "pageNumber",
+  "totalPages",
+  "pageNumber:roman",
+  "totalPages:roman",
+  "pageNumber:lower-roman",
+  "totalPages:lower-roman",
+  "pageNumber:padN",
+  "totalPages:padN",
+  "date",
+  "date:FORMAT"
+] as const);
+
+const RENDER_TARGETS = Object.freeze(["canvas", "pdf"] as const);
+
+/**
+ * Package version exposed for consumer capability checks.
+ */
+export const CANVADOC_TYPESETTER_VERSION = "0.1.0";
+
+/**
+ * Stable runtime capability flags for integration-time feature detection.
+ */
+export const CANVADOC_TYPESETTER_CAPABILITIES: TypesetterCapabilities = Object.freeze({
+  sourceMapping: true,
+  headerFooterPlaceholders: HEADER_FOOTER_PLACEHOLDERS,
+  emojiFallback: "heuristicMetrics",
+  emojiSuppression: true,
+  colorEmojiRequiresFontAssets: true,
+  pdfFontSubsetting: true,
+  pdfEmojiImageCache: true,
+  renderTargets: RENDER_TARGETS
+});
+
+/**
+ * Runtime metadata bundle for consumer compatibility checks.
+ */
+export const CANVADOC_TYPESETTER_METADATA: TypesetterRuntimeMetadata = Object.freeze({
+  version: CANVADOC_TYPESETTER_VERSION,
+  capabilities: CANVADOC_TYPESETTER_CAPABILITIES
+});
 
 /**
  * Create a new typesetter instance with the given options.
@@ -38,7 +92,7 @@ const DEFAULT_VIEW: CanvasViewOptions = {
  * @example
  * ```typescript
  * const typesetter = createTypesetter({
- *   page: { size: "A4", marginPt: { top: 72, right: 72, bottom: 72, left: 72 } },
+ *   page: { size: "A4", margin: { top: 72, right: 72, bottom: 72, left: 72 } },
  *   typography: { baseFontSizePt: 12, lineHeight: 1.4, paragraphSpacingPt: 12, headingScale: { h1: 2, h2: 1.5, h3: 1.2 } },
  *   fonts: { text: textFont, math: mathFont, mono: monoFont }
  * });
@@ -110,7 +164,7 @@ export async function loadFontSpecFromUrl(
   id: string,
   url: string,
   cssFamily?: string
-): Promise<{ id: string; source: ArrayBuffer; cssFamily?: string }> {
+): Promise<FontSpec> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch font ${url}: ${response.status} ${response.statusText}`);
@@ -122,11 +176,34 @@ export async function loadFontSpecFromUrl(
   };
 }
 
-// Re-export all types
-export * from "./types";
+/**
+ * Read the package runtime metadata.
+ */
+export function getCanvaDocTypesetterMetadata(): TypesetterRuntimeMetadata {
+  return CANVADOC_TYPESETTER_METADATA;
+}
 
-// Re-export markdown types (SourceLineRange, MarkdownBlock)
-export type { SourceLineRange, MarkdownBlock } from "./markdown";
+export type {
+  CanvasViewOptions,
+  DrawOp,
+  FontSpec,
+  HeaderFooterConfig,
+  MarginConfig,
+  MarginPt,
+  MarginPreset,
+  PageLayout,
+  PageSize,
+  PageSizePreset,
+  PdfOptions,
+  SourceSpan,
+  TypesetDiagnostics,
+  TypesetFeatureOptions,
+  TypesetOptions,
+  TypesetResult,
+  Typesetter,
+  TypesetterCapabilities,
+  TypesetterRuntimeMetadata
+};
 
 /**
  * Convert millimeters to points.

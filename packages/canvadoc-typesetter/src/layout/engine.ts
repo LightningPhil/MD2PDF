@@ -18,16 +18,16 @@ import {
 import { layoutMathExpression, type MathBox } from "../math/layout";
 import type {
   DrawOp,
-  GlyphOp,
   GlyphRunOp,
   NormalizedTypesetOptions,
   PageLayout,
-  SourceMappingEntry,
   TextSpanOp,
   TypesetDiagnostics,
   TypesetResult
 } from "../types";
 import { parseInlineNodes, type InlineTextStyle } from "./inline-parser";
+import { splitGraphemes } from "../text/graphemes";
+import { shouldUseEmojiMetricsFallback } from "../text/emoji";
 
 type SpanRole = TextSpanOp["role"];
 
@@ -41,6 +41,7 @@ type TextFragment = {
   descent: number;
   isSpace: boolean;
   allowCharBreak: boolean;
+  graphemes: string[];
   charWidths: number[];
   bold: boolean;
   italic: boolean;
@@ -118,6 +119,17 @@ type TableLineLayout = {
   heightPt: number;
 };
 
+type HeaderFooterInlineFragment = {
+  text: string;
+  fontId: string;
+  fontSizePt: number;
+  width: number;
+  ascent: number;
+  descent: number;
+  strike: boolean;
+  linkHref?: string;
+};
+
 export function layoutDocument(
   markdown: string,
   options: NormalizedTypesetOptions,
@@ -132,48 +144,26 @@ export function layoutDocument(
   diagnostics.timingsMs!.parseMarkdown = performanceNow() - parseStart;
 
   const state = createInitialState(options, diagnostics, metrics);
-  const sourceMapping: SourceMappingEntry[] = [];
 
   const layoutStart = performanceNow();
   // Layout stage owns all geometry decisions; renderers should be paint-only.
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
     const next = blocks[i + 1] ?? null;
-    
-    // Capture position before block layout
-    const startPageIndex = state.currentPage.index;
-    const startYPt = state.cursorYPt;
-    
     layoutBlock(block, next, state);
-    
-    // Capture position after block layout
-    const endPageIndex = state.currentPage.index;
-    const endYPt = state.cursorYPt;
-    
-    // Add source mapping entry
-    if (block.sourceLines) {
-      sourceMapping.push({
-        sourceLineStart: block.sourceLines.start,
-        sourceLineEnd: block.sourceLines.end,
-        pageIndex: startPageIndex,
-        yStartPt: startYPt,
-        yEndPt: endPageIndex === startPageIndex ? endYPt : state.options.page.resolved.heightPt
-      });
-    }
   }
   diagnostics.timingsMs!.layout = performanceNow() - layoutStart;
 
   // Add headers and footers to each page
   const hfStart = performanceNow();
-  addHeadersAndFooters(state.pages, options, metrics);
+  addHeadersAndFooters(state.pages, options, metrics, diagnostics);
   diagnostics.timingsMs!.headerFooter = performanceNow() - hfStart;
 
   diagnostics.timingsMs!.total = performanceNow() - timingsStart;
 
   return {
     pages: state.pages,
-    diagnostics,
-    sourceMapping
+    diagnostics
   };
 }
 
@@ -301,13 +291,15 @@ function layoutParagraph(text: string, style: ParagraphStyle, state: LayoutState
   const fragments = style.parseInline
     ? parseParagraphFragments(text, style, state)
     : [
-        createTextFragment(
+      createTextFragment(
           text,
           style.fontId,
           style.fontSizePt,
           state.metrics,
           false,
-          true
+          true,
+          undefined,
+          state.options
         )
       ];
 
@@ -344,7 +336,8 @@ function parseParagraphFragments(
           resolvedFontId,
           style.fontSizePt,
           state.metrics,
-          node.style
+          node.style,
+          state.options
         )
       );
       continue;
@@ -365,7 +358,8 @@ function parseParagraphFragments(
             italic: codeStyle?.italic ?? false,
             strike: codeStyle?.strike ?? false,
             linkHref: codeStyle?.href
-          }
+          },
+          state.options
         )
       );
       continue;
@@ -395,7 +389,9 @@ function parseParagraphFragments(
           style.fontSizePt,
           state.metrics,
           false,
-          true
+          true,
+          undefined,
+          state.options
         )
       );
     }
@@ -625,7 +621,7 @@ function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): v
 
   const tabSize = Math.max(1, codeOptions.tabSize);
   const normalizedLines = (lines.length === 0 ? [""] : lines).map((line) =>
-    expandTabs(line, tabSize)
+    applyEmojiPolicyToText(expandTabs(line, tabSize), state.options)
   );
 
   const lineNumberFontSize = baseSize * 0.86;
@@ -722,6 +718,7 @@ function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): v
             state.currentPage.ops,
             undefined,
             undefined,
+            undefined,
             state,
             "code"
           );
@@ -745,6 +742,7 @@ function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): v
         baseline,
         state.metrics,
         state.currentPage.ops,
+        undefined,
         undefined,
         undefined,
         state,
@@ -1326,7 +1324,10 @@ function wrapLineByCharacters(
 
   while (remaining.length > 0) {
     const split = splitTextToWidth(remaining, fontId, fontSizePt, metrics, maxWidthPt);
-    const head = split.head || remaining[0];
+    const head = split.head || splitGraphemes(remaining)[0] || "";
+    if (!head) {
+      break;
+    }
     parts.push(head);
     remaining = split.tail;
   }
@@ -1464,6 +1465,7 @@ function emitFragment(
     baselinePt,
     metrics,
     ops,
+    fragment.graphemes,
     fragment.charWidths,
     fragment,
     state,
@@ -1543,21 +1545,24 @@ function emitTextSegment(
   yBaselinePt: number,
   metrics: FontMetricsProvider,
   ops: DrawOp[],
+  precomputedGraphemes?: string[],
   precomputedCharWidths?: number[],
   fragment?: TextFragment,
   state?: LayoutState,
   role: SpanRole = "paragraph"
 ): void {
-  if (!text) {
+  const graphemes = precomputedGraphemes ?? splitGraphemes(text);
+  if (graphemes.length === 0) {
     return;
   }
 
   let runX = xPt;
   // Group adjacent characters that resolve to the same concrete font.
-  let runFontId = metrics.resolveFontForChar(fontId, text[0]);
+  let runFontId = metrics.resolveFontForChar(fontId, graphemes[0]);
   let runOffsets: number[] = [0];
-  let runText = text[0];
-  let runAdvance = precomputedCharWidths?.[0] ?? metrics.getAdvanceWidth(fontId, text[0], fontSizePt);
+  let runText = graphemes[0];
+  let runAdvance =
+    precomputedCharWidths?.[0] ?? metrics.getAdvanceWidth(fontId, graphemes[0], fontSizePt);
 
   const flushRun = (): void => {
     if (!runText) {
@@ -1586,21 +1591,22 @@ function emitTextSegment(
     }
   };
 
-  for (let i = 1; i < text.length; i += 1) {
-    const char = text[i];
-    const resolvedFont = metrics.resolveFontForChar(fontId, char);
-    const width = precomputedCharWidths?.[i] ?? metrics.getAdvanceWidth(fontId, char, fontSizePt);
+  for (let i = 1; i < graphemes.length; i += 1) {
+    const grapheme = graphemes[i];
+    const resolvedFont = metrics.resolveFontForChar(fontId, grapheme);
+    const width =
+      precomputedCharWidths?.[i] ?? metrics.getAdvanceWidth(fontId, grapheme, fontSizePt);
     if (resolvedFont !== runFontId) {
       flushRun();
       runX += runAdvance;
       runFontId = resolvedFont;
-      runText = char;
+      runText = grapheme;
       runOffsets = [0];
       runAdvance = width;
       continue;
     }
 
-    runText += char;
+    runText += grapheme;
     runOffsets.push(runAdvance);
     runAdvance += width;
   }
@@ -1613,18 +1619,55 @@ function createTextFragmentsFromText(
   fontId: string,
   fontSizePt: number,
   metrics: FontMetricsProvider,
-  style?: InlineTextStyle
+  style?: InlineTextStyle,
+  optionsForEmojiPolicy?: Pick<NormalizedTypesetOptions, "features">
 ): TextFragment[] {
-  const parts = text.split(/(\s+)/).filter((part) => part.length > 0);
-  return parts.map((part) =>
-    createTextFragment(part, fontId, fontSizePt, metrics, /^\s+$/.test(part), true, {
+  const policyText = optionsForEmojiPolicy
+    ? applyEmojiPolicyToText(text, optionsForEmojiPolicy)
+    : text;
+  const parts = policyText.split(/(\s+)/).filter((part) => part.length > 0);
+  const fragments: TextFragment[] = [];
+
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    const isSpace = /^\s+$/.test(part);
+    const fragment = createTextFragment(part, fontId, fontSizePt, metrics, isSpace, true, {
       bold: style?.bold ?? false,
       italic: style?.italic ?? false,
       strike: style?.strike ?? false,
       linkHref: style?.href,
       sourceKind: "markdown"
-    })
-  );
+    });
+
+    fragments.push(fragment);
+  }
+
+  return fragments;
+}
+
+function applyEmojiPolicyToText(
+  text: string,
+  options: Pick<NormalizedTypesetOptions, "features">
+): string {
+  if (!text || options.features.emoji.mode !== "suppress") {
+    return text;
+  }
+
+  const replacement = options.features.emoji.replacement;
+  const graphemes = splitGraphemes(text);
+  let replaced = false;
+  const out: string[] = [];
+
+  for (const grapheme of graphemes) {
+    if (shouldUseEmojiMetricsFallback(grapheme)) {
+      out.push(replacement);
+      replaced = true;
+      continue;
+    }
+    out.push(grapheme);
+  }
+
+  return replaced ? out.join("") : text;
 }
 
 function createTextFragment(
@@ -1640,27 +1683,26 @@ function createTextFragment(
     strike?: boolean;
     linkHref?: string;
     sourceKind?: "markdown" | "math";
-  }
+  },
+  optionsForEmojiPolicy?: Pick<NormalizedTypesetOptions, "features">
 ): TextFragment {
-  const charWidths: number[] = [];
-  let width = 0;
-  for (const char of text) {
-    const w = metrics.getAdvanceWidth(fontId, char, fontSizePt);
-    charWidths.push(w);
-    width += w;
-  }
+  const policyText = optionsForEmojiPolicy
+    ? applyEmojiPolicyToText(text, optionsForEmojiPolicy)
+    : text;
+  const measured = measureTextBox(policyText, fontId, fontSizePt, metrics);
 
   return {
     kind: "text",
-    text,
+    text: policyText,
     fontId,
     fontSizePt,
-    width,
-    ascent: metrics.getAscent(fontId, fontSizePt),
-    descent: metrics.getDescent(fontId, fontSizePt),
+    width: measured.width,
+    ascent: measured.ascent,
+    descent: measured.descent,
     isSpace,
     allowCharBreak,
-    charWidths,
+    graphemes: measured.graphemes,
+    charWidths: measured.charWidths,
     bold: style?.bold ?? false,
     italic: style?.italic ?? false,
     strike: style?.strike ?? false,
@@ -1669,13 +1711,36 @@ function createTextFragment(
   };
 }
 
+function measureTextBox(
+  text: string,
+  fontId: string,
+  fontSizePt: number,
+  metrics: FontMetricsProvider
+): { graphemes: string[]; charWidths: number[]; width: number; ascent: number; descent: number } {
+  const graphemes = splitGraphemes(text);
+  const charWidths: number[] = [];
+  let width = 0;
+  let ascent = metrics.getAscent(fontId, fontSizePt);
+  let descent = metrics.getDescent(fontId, fontSizePt);
+
+  for (const grapheme of graphemes) {
+    const glyph = metrics.getGlyphMetrics(fontId, grapheme, fontSizePt);
+    charWidths.push(glyph.widthPt);
+    width += glyph.widthPt;
+    ascent = Math.max(ascent, glyph.ascentPt);
+    descent = Math.max(descent, glyph.descentPt);
+  }
+
+  return { graphemes, charWidths, width, ascent, descent };
+}
+
 function splitTextFragmentToWidth(
   fragment: TextFragment,
   maxWidthPt: number,
   style: ParagraphStyle,
   state: LayoutState
 ): { head: TextFragment | null; tail: TextFragment | null } {
-  if (fragment.width <= maxWidthPt || fragment.text.length < 2) {
+  if (fragment.width <= maxWidthPt || fragment.graphemes.length < 2) {
     return { head: fragment, tail: null };
   }
 
@@ -1701,12 +1766,14 @@ function splitTextFragmentToWidth(
     }
   }
 
-  const headText = fragment.text.slice(0, splitIndex);
-  const tailText = fragment.text.slice(splitIndex);
+  const headGraphemes = fragment.graphemes.slice(0, splitIndex);
+  const tailGraphemes = fragment.graphemes.slice(splitIndex);
+  const headText = headGraphemes.join("");
+  const tailText = tailGraphemes.join("");
   const appendHyphen =
     state.options.features.typography.hyphenation &&
-    splitIndex < fragment.text.length &&
-    /[A-Za-z]/.test(fragment.text);
+    splitIndex < fragment.graphemes.length &&
+    fragment.graphemes.some((grapheme) => /^[A-Za-z]$/.test(grapheme));
   const hyphenWidth = appendHyphen
     ? state.metrics.getAdvanceWidth(fragment.fontId, "-", style.fontSizePt)
     : 0;
@@ -1717,6 +1784,7 @@ function splitTextFragmentToWidth(
     width:
       fragment.charWidths.slice(0, splitIndex).reduce((sum, x) => sum + x, 0) +
       hyphenWidth,
+    graphemes: appendHyphen ? [...headGraphemes, "-"] : headGraphemes,
     charWidths: appendHyphen
       ? [...fragment.charWidths.slice(0, splitIndex), hyphenWidth]
       : fragment.charWidths.slice(0, splitIndex),
@@ -1729,6 +1797,7 @@ function splitTextFragmentToWidth(
           ...fragment,
           text: tailText,
           width: fragment.charWidths.slice(splitIndex).reduce((sum, x) => sum + x, 0),
+          graphemes: tailGraphemes,
           charWidths: fragment.charWidths.slice(splitIndex),
           isSpace: false
         } as TextFragment)
@@ -1744,23 +1813,23 @@ function chooseHyphenBreak(
   style: ParagraphStyle,
   state: LayoutState
 ): number | null {
-  const text = fragment.text;
-  if (!/^[A-Za-z]+$/.test(text)) {
+  const graphemes = fragment.graphemes;
+  if (!graphemes.every((grapheme) => /^[A-Za-z]$/.test(grapheme))) {
     return null;
   }
 
   const minPrefix = Math.max(1, state.options.features.typography.hyphenMinPrefix);
   const minSuffix = Math.max(1, state.options.features.typography.hyphenMinSuffix);
   const hyphenWidth = state.metrics.getAdvanceWidth(fragment.fontId, "-", style.fontSizePt);
-  const limit = Math.min(fallbackSplit, text.length - minSuffix);
+  const limit = Math.min(fallbackSplit, graphemes.length - minSuffix);
   if (limit < minPrefix) {
     return null;
   }
 
   let best: number | null = null;
   for (let i = minPrefix; i <= limit; i += 1) {
-    const lhs = text[i - 1];
-    const rhs = text[i];
+    const lhs = graphemes[i - 1];
+    const rhs = graphemes[i];
     if (!lhs || !rhs) {
       continue;
     }
@@ -1791,22 +1860,23 @@ function splitTextToWidth(
   metrics: FontMetricsProvider,
   maxWidthPt: number
 ): { head: string; tail: string } {
+  const graphemes = splitGraphemes(text);
   let width = 0;
   let splitIndex = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    const charWidth = metrics.getAdvanceWidth(fontId, text[i], fontSizePt);
-    if (width + charWidth > maxWidthPt) {
+  for (let i = 0; i < graphemes.length; i += 1) {
+    const graphemeWidth = metrics.getAdvanceWidth(fontId, graphemes[i], fontSizePt);
+    if (width + graphemeWidth > maxWidthPt) {
       break;
     }
-    width += charWidth;
+    width += graphemeWidth;
     splitIndex = i + 1;
   }
   if (splitIndex === 0) {
     splitIndex = 1;
   }
   return {
-    head: text.slice(0, splitIndex),
-    tail: text.slice(splitIndex)
+    head: graphemes.slice(0, splitIndex).join(""),
+    tail: graphemes.slice(splitIndex).join("")
   };
 }
 
@@ -1838,19 +1908,7 @@ function resolveStyledFontId(
   defaultFontId: string,
   state: LayoutState
 ): string {
-  if (!style || (!style.bold && !style.italic)) {
-    return defaultFontId;
-  }
-  if (style.bold && style.italic && state.options.fonts.textBoldItalic) {
-    return state.options.fonts.textBoldItalic.id;
-  }
-  if (style.bold && state.options.fonts.textBold) {
-    return state.options.fonts.textBold.id;
-  }
-  if (style.italic && state.options.fonts.textItalic) {
-    return state.options.fonts.textItalic.id;
-  }
-  return defaultFontId;
+  return resolveStyledFontIdForOptions(style, defaultFontId, state.options);
 }
 
 function expandTabs(text: string, tabSize: number): string {
@@ -1906,22 +1964,32 @@ function performanceNow(): number {
  * Supported placeholders:
  * - {{pageNumber}} - Current page number (1-based)
  * - {{totalPages}} - Total number of pages
+ * - {{pageNumber:roman}} / {{totalPages:roman}} - Uppercase Roman numerals
+ * - {{pageNumber:lower-roman}} / {{totalPages:lower-roman}} - Lowercase Roman numerals
+ * - {{pageNumber:padN}} / {{totalPages:padN}} - Zero-padded decimal width N (e.g. pad3)
  * - {{date}} - Current date in ISO format (YYYY-MM-DD)
  * - {{date:FORMAT}} - Date with custom format
  */
 function replacePlaceholders(
   text: string,
   pageIndex: number,
-  totalPages: number
+  totalPages: number,
+  now: Date
 ): string {
-  if (!text) return text;
+  if (!text) {
+    return text;
+  }
 
-  const now = new Date();
   const isoDate = now.toISOString().split("T")[0]; // YYYY-MM-DD
 
   let result = text;
-  result = result.replace(/\{\{pageNumber\}\}/gi, String(pageIndex + 1));
-  result = result.replace(/\{\{totalPages\}\}/gi, String(totalPages));
+  result = result.replace(
+    /\{\{(pageNumber|totalPages)(?::([^}]+))?\}\}/gi,
+    (_match, key: string, format: string | undefined) => {
+      const value = key.toLowerCase() === "pagenumber" ? pageIndex + 1 : totalPages;
+      return formatPageCounter(value, format);
+    }
+  );
   result = result.replace(/\{\{date\}\}/gi, isoDate);
 
   // Handle custom date formats: {{date:FORMAT}}
@@ -1930,6 +1998,63 @@ function replacePlaceholders(
   });
 
   return result;
+}
+
+function formatPageCounter(value: number, format: string | undefined): string {
+  if (!format) {
+    return String(value);
+  }
+
+  const normalized = format.trim().toLowerCase();
+  if (normalized === "roman" || normalized === "upper-roman") {
+    return toRomanNumeral(value);
+  }
+  if (normalized === "lower-roman") {
+    return toRomanNumeral(value).toLowerCase();
+  }
+
+  const pad = normalized.match(/^pad(\d{1,3})$/);
+  if (pad) {
+    const width = Math.max(1, Math.min(12, Number(pad[1])));
+    return String(value).padStart(width, "0");
+  }
+
+  return String(value);
+}
+
+function toRomanNumeral(value: number): string {
+  if (!Number.isFinite(value) || value <= 0 || value >= 4000) {
+    return String(value);
+  }
+
+  const map: Array<{ value: number; token: string }> = [
+    { value: 1000, token: "M" },
+    { value: 900, token: "CM" },
+    { value: 500, token: "D" },
+    { value: 400, token: "CD" },
+    { value: 100, token: "C" },
+    { value: 90, token: "XC" },
+    { value: 50, token: "L" },
+    { value: 40, token: "XL" },
+    { value: 10, token: "X" },
+    { value: 9, token: "IX" },
+    { value: 5, token: "V" },
+    { value: 4, token: "IV" },
+    { value: 1, token: "I" }
+  ];
+
+  let remaining = Math.floor(value);
+  let out = "";
+  for (const entry of map) {
+    while (remaining >= entry.value) {
+      out += entry.token;
+      remaining -= entry.value;
+    }
+    if (remaining === 0) {
+      break;
+    }
+  }
+  return out;
 }
 
 /**
@@ -1967,7 +2092,8 @@ function formatDate(date: Date, format: string): string {
 function addHeadersAndFooters(
   pages: PageLayout[],
   options: NormalizedTypesetOptions,
-  metrics: FontMetricsProvider
+  metrics: FontMetricsProvider,
+  diagnostics: TypesetDiagnostics
 ): void {
   const hf = options.headerFooter;
   const hasHeader = hf.header.left || hf.header.center || hf.header.right;
@@ -1978,11 +2104,11 @@ function addHeadersAndFooters(
   }
 
   const totalPages = pages.length;
-  const fontId = options.fonts.text.id;
-  const fontSizePt = hf.fontSizePt;
   const resolved = options.page.resolved;
   const contentX = resolved.contentXPt;
   const contentW = resolved.contentWPt;
+  const now = new Date();
+  const baselines = resolveHeaderFooterBaselines(options, metrics, diagnostics);
 
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i];
@@ -1995,122 +2121,450 @@ function addHeadersAndFooters(
 
     // Add header
     if (hasHeader) {
-      const headerY = resolved.headerYPt;
-
-      // Left-aligned header text
-      if (hf.header.left) {
-        const text = replacePlaceholders(hf.header.left, pageIndex, totalPages);
-        page.ops.push({
-          kind: "glyphRun",
-          fontId,
-          fontSizePt,
-          xPt: contentX,
-          yBaselinePt: headerY,
-          text
-        });
-      }
-
-      // Center-aligned header text
-      if (hf.header.center) {
-        const text = replacePlaceholders(hf.header.center, pageIndex, totalPages);
-        const textWidth = metrics.getTextWidth(fontId, text, fontSizePt);
-        const centerX = contentX + (contentW - textWidth) / 2;
-        page.ops.push({
-          kind: "glyphRun",
-          fontId,
-          fontSizePt,
-          xPt: centerX,
-          yBaselinePt: headerY,
-          text
-        });
-      }
-
-      // Right-aligned header text
-      if (hf.header.right) {
-        const text = replacePlaceholders(hf.header.right, pageIndex, totalPages);
-        const textWidth = metrics.getTextWidth(fontId, text, fontSizePt);
-        const rightX = contentX + contentW - textWidth;
-        page.ops.push({
-          kind: "glyphRun",
-          fontId,
-          fontSizePt,
-          xPt: rightX,
-          yBaselinePt: headerY,
-          text
-        });
-      }
+      drawHeaderFooterSlot(
+        page,
+        replacePlaceholders(hf.header.left, pageIndex, totalPages, now),
+        "left",
+        baselines.headerBaselinePt,
+        contentX,
+        contentW,
+        options,
+        metrics,
+        diagnostics,
+        "header.left"
+      );
+      drawHeaderFooterSlot(
+        page,
+        replacePlaceholders(hf.header.center, pageIndex, totalPages, now),
+        "center",
+        baselines.headerBaselinePt,
+        contentX,
+        contentW,
+        options,
+        metrics,
+        diagnostics,
+        "header.center"
+      );
+      drawHeaderFooterSlot(
+        page,
+        replacePlaceholders(hf.header.right, pageIndex, totalPages, now),
+        "right",
+        baselines.headerBaselinePt,
+        contentX,
+        contentW,
+        options,
+        metrics,
+        diagnostics,
+        "header.right"
+      );
 
       // Add separator line below header if configured
-      if (hf.showSeparator) {
-        const separatorY = headerY + fontSizePt * 0.3;
+      if (hf.showSeparator && baselines.headerSeparatorYPt !== null) {
         page.ops.push({
           kind: "rule",
           xPt: contentX,
-          yPt: separatorY,
+          yPt: baselines.headerSeparatorYPt,
           wPt: contentW,
-          hPt: 0.5
+          hPt: hf.separatorWidthPt
         });
       }
     }
 
     // Add footer
     if (hasFooter) {
-      const footerY = resolved.footerYPt;
-
-      // Left-aligned footer text
-      if (hf.footer.left) {
-        const text = replacePlaceholders(hf.footer.left, pageIndex, totalPages);
-        page.ops.push({
-          kind: "glyphRun",
-          fontId,
-          fontSizePt,
-          xPt: contentX,
-          yBaselinePt: footerY,
-          text
-        });
-      }
-
-      // Center-aligned footer text
-      if (hf.footer.center) {
-        const text = replacePlaceholders(hf.footer.center, pageIndex, totalPages);
-        const textWidth = metrics.getTextWidth(fontId, text, fontSizePt);
-        const centerX = contentX + (contentW - textWidth) / 2;
-        page.ops.push({
-          kind: "glyphRun",
-          fontId,
-          fontSizePt,
-          xPt: centerX,
-          yBaselinePt: footerY,
-          text
-        });
-      }
-
-      // Right-aligned footer text
-      if (hf.footer.right) {
-        const text = replacePlaceholders(hf.footer.right, pageIndex, totalPages);
-        const textWidth = metrics.getTextWidth(fontId, text, fontSizePt);
-        const rightX = contentX + contentW - textWidth;
-        page.ops.push({
-          kind: "glyphRun",
-          fontId,
-          fontSizePt,
-          xPt: rightX,
-          yBaselinePt: footerY,
-          text
-        });
-      }
+      drawHeaderFooterSlot(
+        page,
+        replacePlaceholders(hf.footer.left, pageIndex, totalPages, now),
+        "left",
+        baselines.footerBaselinePt,
+        contentX,
+        contentW,
+        options,
+        metrics,
+        diagnostics,
+        "footer.left"
+      );
+      drawHeaderFooterSlot(
+        page,
+        replacePlaceholders(hf.footer.center, pageIndex, totalPages, now),
+        "center",
+        baselines.footerBaselinePt,
+        contentX,
+        contentW,
+        options,
+        metrics,
+        diagnostics,
+        "footer.center"
+      );
+      drawHeaderFooterSlot(
+        page,
+        replacePlaceholders(hf.footer.right, pageIndex, totalPages, now),
+        "right",
+        baselines.footerBaselinePt,
+        contentX,
+        contentW,
+        options,
+        metrics,
+        diagnostics,
+        "footer.right"
+      );
 
       // Add separator line above footer if configured
-      if (hf.showSeparator) {
-        const separatorY = footerY - fontSizePt * 0.8;
+      if (hf.showSeparator && baselines.footerSeparatorYPt !== null) {
         page.ops.push({
           kind: "rule",
           xPt: contentX,
-          yPt: separatorY,
+          yPt: baselines.footerSeparatorYPt,
           wPt: contentW,
-          hPt: 0.5
+          hPt: hf.separatorWidthPt
         });
       }
     }
   }
+}
+
+function resolveHeaderFooterBaselines(
+  options: NormalizedTypesetOptions,
+  metrics: FontMetricsProvider,
+  diagnostics: TypesetDiagnostics
+): {
+  headerBaselinePt: number;
+  footerBaselinePt: number;
+  headerSeparatorYPt: number | null;
+  footerSeparatorYPt: number | null;
+} {
+  const resolved = options.page.resolved;
+  const hf = options.headerFooter;
+  const fontId = options.fonts.text.id;
+  const ascent = metrics.getAscent(fontId, hf.fontSizePt);
+  const descent = metrics.getDescent(fontId, hf.fontSizePt);
+  const separatorReserve = hf.showSeparator ? hf.separatorGapPt + hf.separatorWidthPt : 0;
+
+  const headerMin = Math.max(0.5 + ascent, ascent);
+  const headerMax = resolved.contentYPt - descent - separatorReserve;
+  let headerBaselinePt = resolved.headerYPt;
+  if (headerMax < headerMin) {
+    headerBaselinePt = headerMin;
+    pushWarningOnce(
+      diagnostics,
+      "Header/footer: top margin is too small for configured header settings; header was pinned to the safest baseline."
+    );
+  } else {
+    headerBaselinePt = clamp(resolved.headerYPt, headerMin, headerMax);
+    if (Math.abs(headerBaselinePt - resolved.headerYPt) > 0.01) {
+      pushWarningOnce(
+        diagnostics,
+        "Header/footer: header baseline was clamped to stay inside the top margin."
+      );
+    }
+  }
+
+  const footerMin = resolved.contentBottomPt + ascent + separatorReserve;
+  const footerMax = resolved.heightPt - descent - 0.5;
+  let footerBaselinePt = resolved.footerYPt;
+  if (footerMin > footerMax) {
+    footerBaselinePt = footerMax;
+    pushWarningOnce(
+      diagnostics,
+      "Header/footer: bottom margin is too small for configured footer settings; footer was pinned to the safest baseline."
+    );
+  } else {
+    footerBaselinePt = clamp(resolved.footerYPt, footerMin, footerMax);
+    if (Math.abs(footerBaselinePt - resolved.footerYPt) > 0.01) {
+      pushWarningOnce(
+        diagnostics,
+        "Header/footer: footer baseline was clamped to stay inside the bottom margin."
+      );
+    }
+  }
+
+  let headerSeparatorYPt: number | null = null;
+  let footerSeparatorYPt: number | null = null;
+  if (hf.showSeparator) {
+    const idealHeaderSeparator = headerBaselinePt + descent + hf.separatorGapPt;
+    const maxHeaderSeparator = resolved.contentYPt - hf.separatorWidthPt;
+    headerSeparatorYPt = clamp(idealHeaderSeparator, 0, maxHeaderSeparator);
+    if (Math.abs(headerSeparatorYPt - idealHeaderSeparator) > 0.01) {
+      pushWarningOnce(
+        diagnostics,
+        "Header/footer: header separator was clamped to avoid overlapping main content."
+      );
+    }
+
+    const idealFooterSeparator =
+      footerBaselinePt - ascent - hf.separatorGapPt - hf.separatorWidthPt;
+    const minFooterSeparator = resolved.contentBottomPt;
+    footerSeparatorYPt = clamp(
+      idealFooterSeparator,
+      minFooterSeparator,
+      resolved.heightPt - hf.separatorWidthPt
+    );
+    if (Math.abs(footerSeparatorYPt - idealFooterSeparator) > 0.01) {
+      pushWarningOnce(
+        diagnostics,
+        "Header/footer: footer separator was clamped to avoid overlapping main content."
+      );
+    }
+  }
+
+  return {
+    headerBaselinePt,
+    footerBaselinePt,
+    headerSeparatorYPt,
+    footerSeparatorYPt
+  };
+}
+
+function drawHeaderFooterSlot(
+  page: PageLayout,
+  text: string,
+  alignment: "left" | "center" | "right",
+  baselinePt: number,
+  contentXPt: number,
+  contentWPt: number,
+  options: NormalizedTypesetOptions,
+  metrics: FontMetricsProvider,
+  diagnostics: TypesetDiagnostics,
+  contextLabel: string
+): void {
+  if (!text) {
+    return;
+  }
+
+  const fragments = parseHeaderFooterInlineFragments(text, options, metrics);
+  if (fragments.length === 0) {
+    return;
+  }
+
+  const width = fragments.reduce((sum, fragment) => sum + fragment.width, 0);
+  if (width > contentWPt + 0.01) {
+    pushWarningOnce(
+      diagnostics,
+      `Header/footer: ${contextLabel} exceeds available width and may be clipped.`
+    );
+  }
+
+  let xPt = contentXPt;
+  if (alignment === "center") {
+    xPt = contentXPt + (contentWPt - width) / 2;
+  } else if (alignment === "right") {
+    xPt = contentXPt + contentWPt - width;
+  }
+  xPt = Math.max(contentXPt, xPt);
+
+  for (const fragment of fragments) {
+    emitTextSegment(
+      fragment.text,
+      fragment.fontId,
+      fragment.fontSizePt,
+      xPt,
+      baselinePt,
+      metrics,
+      page.ops
+    );
+
+    if (fragment.strike) {
+      const strike = metrics.getStrikeMetrics(fragment.fontId, fragment.fontSizePt);
+      const yPt = baselinePt + strike.offsetPt - strike.thicknessPt / 2;
+      page.ops.push({
+        kind: "strikethrough",
+        xPt,
+        yPt,
+        wPt: fragment.width,
+        thicknessPt: strike.thicknessPt
+      });
+    }
+
+    if (fragment.linkHref) {
+      if (options.features.typography.linkUnderline) {
+        const typography = options.features.typography;
+        const underline = metrics.getUnderlineMetrics(fragment.fontId, fragment.fontSizePt);
+        let offsetPt = underline.offsetPt;
+        let thicknessPt = underline.thicknessPt;
+
+        if (typography.linkUnderlineMode === "smart") {
+          const minOffsetPt = Math.max(
+            fragment.fontSizePt * typography.linkUnderlineMinOffsetEm,
+            fragment.descent * 0.62
+          );
+          const minThicknessPt = Math.max(0.4, fragment.fontSizePt * 0.03);
+          const maxThicknessPt = Math.max(
+            minThicknessPt,
+            fragment.fontSizePt * typography.linkUnderlineMaxThicknessEm
+          );
+          offsetPt = Math.max(offsetPt, minOffsetPt);
+          thicknessPt = Math.min(Math.max(thicknessPt, minThicknessPt), maxThicknessPt);
+        }
+
+        page.ops.push({
+          kind: "underline",
+          xPt,
+          yPt: baselinePt + offsetPt - thicknessPt / 2,
+          wPt: fragment.width,
+          thicknessPt,
+          colorRgb: [0.1, 0.2, 0.85]
+        });
+      }
+
+      page.ops.push({
+        kind: "link",
+        xPt,
+        yPt: baselinePt - fragment.ascent,
+        wPt: fragment.width,
+        hPt: fragment.ascent + fragment.descent,
+        href: fragment.linkHref
+      });
+    }
+
+    xPt += fragment.width;
+  }
+}
+
+function parseHeaderFooterInlineFragments(
+  text: string,
+  options: NormalizedTypesetOptions,
+  metrics: FontMetricsProvider
+): HeaderFooterInlineFragment[] {
+  const nodes = parseInlineNodes(text);
+  const textFontId = options.fonts.text.id;
+  const codeFontId = options.fonts.mono?.id ?? textFontId;
+  const fontSizePt = options.headerFooter.fontSizePt;
+  const out: HeaderFooterInlineFragment[] = [];
+
+  for (const node of nodes) {
+    if (node.kind === "lineBreak") {
+      out.push(
+        createHeaderFooterInlineFragment(
+          " ",
+          textFontId,
+          fontSizePt,
+          metrics,
+          undefined,
+          options
+        )
+      );
+      continue;
+    }
+
+    if (node.kind === "text") {
+      out.push(
+        createHeaderFooterInlineFragment(
+          node.text,
+          resolveStyledFontIdForOptions(node.style, textFontId, options),
+          fontSizePt,
+          metrics,
+          node.style,
+          options
+        )
+      );
+      continue;
+    }
+
+    if (node.kind === "code") {
+      out.push(
+        createHeaderFooterInlineFragment(
+          node.code,
+          codeFontId,
+          fontSizePt * 0.94,
+          metrics,
+          node.style,
+          options
+        )
+      );
+      continue;
+    }
+
+    // Header/footer regions intentionally treat inline math as literal source.
+    out.push(
+      createHeaderFooterInlineFragment(
+        `$${node.expr}$`,
+        resolveStyledFontIdForOptions(node.style, textFontId, options),
+        fontSizePt,
+        metrics,
+        node.style,
+        options
+      )
+    );
+  }
+
+  return mergeHeaderFooterInlineFragments(out);
+}
+
+function createHeaderFooterInlineFragment(
+  text: string,
+  fontId: string,
+  fontSizePt: number,
+  metrics: FontMetricsProvider,
+  style: InlineTextStyle | undefined,
+  optionsForEmojiPolicy: Pick<NormalizedTypesetOptions, "features">
+): HeaderFooterInlineFragment {
+  const policyText = applyEmojiPolicyToText(text, optionsForEmojiPolicy);
+  const measured = measureTextBox(policyText, fontId, fontSizePt, metrics);
+  return {
+    text: policyText,
+    fontId,
+    fontSizePt,
+    width: measured.width,
+    ascent: measured.ascent,
+    descent: measured.descent,
+    strike: style?.strike ?? false,
+    linkHref: style?.href
+  };
+}
+
+function mergeHeaderFooterInlineFragments(
+  fragments: HeaderFooterInlineFragment[]
+): HeaderFooterInlineFragment[] {
+  const merged: HeaderFooterInlineFragment[] = [];
+  for (const fragment of fragments) {
+    if (!fragment.text) {
+      continue;
+    }
+    const prev = merged[merged.length - 1];
+    if (
+      prev &&
+      prev.fontId === fragment.fontId &&
+      Math.abs(prev.fontSizePt - fragment.fontSizePt) < 0.0001 &&
+      prev.strike === fragment.strike &&
+      (prev.linkHref ?? "") === (fragment.linkHref ?? "")
+    ) {
+      prev.text += fragment.text;
+      prev.width += fragment.width;
+      prev.ascent = Math.max(prev.ascent, fragment.ascent);
+      prev.descent = Math.max(prev.descent, fragment.descent);
+      continue;
+    }
+    merged.push({ ...fragment });
+  }
+  return merged;
+}
+
+function resolveStyledFontIdForOptions(
+  style: InlineTextStyle | undefined,
+  defaultFontId: string,
+  options: Pick<NormalizedTypesetOptions, "fonts">
+): string {
+  if (!style || (!style.bold && !style.italic)) {
+    return defaultFontId;
+  }
+  if (style.bold && style.italic && options.fonts.textBoldItalic) {
+    return options.fonts.textBoldItalic.id;
+  }
+  if (style.bold && options.fonts.textBold) {
+    return options.fonts.textBold.id;
+  }
+  if (style.italic && options.fonts.textItalic) {
+    return options.fonts.textItalic.id;
+  }
+  return defaultFontId;
+}
+
+function pushWarningOnce(diagnostics: TypesetDiagnostics, message: string): void {
+  if (!diagnostics.warnings.includes(message)) {
+    diagnostics.warnings.push(message);
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

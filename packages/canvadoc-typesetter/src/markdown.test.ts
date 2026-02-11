@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMarkdownBlocks, type MarkdownBlock, type TableAlign } from './markdown';
+import { parseMarkdownBlocks, type TableAlign } from './markdown';
 
 describe('parseMarkdownBlocks', () => {
   describe('paragraphs', () => {

@@ -11,6 +11,7 @@
  */
 import { FontMetricsProvider } from "../font-metrics";
 import type { CanvasViewOptions, DrawOp, PageLayout } from "../types";
+import { splitGraphemes } from "../text/graphemes";
 
 const PT_TO_CSS_PX = 96 / 72;
 
@@ -95,9 +96,10 @@ function drawOp(
     const family = metrics.getCssFamily(op.fontId);
     ctx.font = `${op.fontSizePt}px "${family}"`;
     const baseline = pageOffsetYPt + op.yBaselinePt;
-    if (op.xOffsetsPt && op.xOffsetsPt.length >= op.text.length) {
-      for (let i = 0; i < op.text.length; i += 1) {
-        ctx.fillText(op.text[i], op.xPt + op.xOffsetsPt[i], baseline);
+    const graphemes = splitGraphemes(op.text);
+    if (op.xOffsetsPt && op.xOffsetsPt.length >= graphemes.length) {
+      for (let i = 0; i < graphemes.length; i += 1) {
+        ctx.fillText(graphemes[i], op.xPt + op.xOffsetsPt[i], baseline);
       }
       return;
     }

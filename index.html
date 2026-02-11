@@ -65,6 +65,13 @@
                         <option value="a3">A3 (297 x 420mm)</option>
                     </select>
                 </label>
+                <label class="control-label">
+                    Emoji:
+                    <select id="emojiModeSelect">
+                        <option value="preserve" selected>Preserve</option>
+                        <option value="suppress">Suppress</option>
+                    </select>
+                </label>
             </div>
         </div>
 
@@ -478,6 +485,9 @@ $$
         </div>
     </div>
 
+    <script>
+        globalThis.__MD2PDF_ENABLE_EMOJI_FONT_FETCH__ = true;
+    </script>
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
