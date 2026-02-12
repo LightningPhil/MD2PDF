@@ -154,8 +154,10 @@ export class MarkdownEditor {
     // Listen for input changes
     this.textarea.addEventListener('input', () => {
       this.notifyChange();
+      this.autoResize();
+      this.notifyCursorLineChange();
     });
-    
+
     // Handle tab key for indentation
     this.textarea.addEventListener('keydown', (e) => {
       if (e.key === 'Tab') {
@@ -180,11 +182,6 @@ export class MarkdownEditor {
       if (isNavigationKey(event.key)) {
         this.notifyCursorLineChange();
       }
-    });
-    
-    // Auto-resize textarea (optional)
-    this.textarea.addEventListener('input', () => {
-      this.autoResize();
     });
   }
   
@@ -224,7 +221,7 @@ export class MarkdownEditor {
     });
   }
 
-  private getCurrentLineNumber(): number {
+  getCurrentLineNumber(): number {
     const cursorPosition = this.textarea.selectionStart ?? 0;
     const prefix = this.textarea.value.slice(0, cursorPosition);
     return prefix.split('\n').length;

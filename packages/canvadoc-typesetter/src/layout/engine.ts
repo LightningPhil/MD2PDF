@@ -21,6 +21,7 @@ import type {
   GlyphRunOp,
   NormalizedTypesetOptions,
   PageLayout,
+  SourceSpan,
   TextSpanOp,
   TypesetDiagnostics,
   TypesetResult
@@ -48,6 +49,7 @@ type TextFragment = {
   strike: boolean;
   linkHref?: string;
   sourceKind: "markdown" | "math";
+  sourceSpan?: SourceSpan;
 };
 
 type MathFragment = {
@@ -94,11 +96,13 @@ type ParagraphStyle = {
   hangingIndentPt: number;
   parseInline: boolean;
   role: SpanRole;
+  sourceSpan?: SourceSpan;
 };
 
 type CodeVisualLine = {
   text: string;
   lineNumber: number | null;
+  sourceSpan?: SourceSpan;
 };
 
 type TableRowLayout = {
@@ -140,7 +144,7 @@ export function layoutDocument(
 
   const parseStart = performanceNow();
   // Parse stage is measured separately so regressions are easy to isolate.
-  const blocks = parseMarkdownBlocks(markdown);
+  const blocks = parseMarkdownBlocks(markdown, { includeSourceSpans: true });
   diagnostics.timingsMs!.parseMarkdown = performanceNow() - parseStart;
 
   const state = createInitialState(options, diagnostics, metrics);
@@ -203,7 +207,8 @@ function layoutBlock(
           firstLineIndentPt: 0,
           hangingIndentPt: 0,
           parseInline: true,
-          role: "heading"
+          role: "heading",
+          sourceSpan: block.sourceSpan
         },
         state
       );
@@ -221,7 +226,8 @@ function layoutBlock(
           firstLineIndentPt: 0,
           hangingIndentPt: 0,
           parseInline: true,
-          role: "paragraph"
+          role: "paragraph",
+          sourceSpan: block.sourceSpan
         },
         state
       );
@@ -233,17 +239,17 @@ function layoutBlock(
       break;
     }
     case "blockquote": {
-      layoutBlockquote(block.depth, block.text, state);
+      layoutBlockquote(block.depth, block.text, state, block.sourceSpan);
       break;
     }
     case "code": {
       state.cursorYPt += typography.paragraphSpacingPt * 0.35;
-      layoutCodeBlock(block.lines, monoFontId, state);
+      layoutCodeBlock(block.lines, monoFontId, state, block.lineSourceSpans, block.sourceSpan);
       state.cursorYPt += typography.paragraphSpacingPt * 0.65;
       break;
     }
     case "displayMath": {
-      layoutDisplayMath(block.expr, state);
+      layoutDisplayMath(block.expr, state, block.sourceSpan);
       break;
     }
     case "table": {
@@ -259,7 +265,8 @@ function layoutBlock(
             firstLineIndentPt: 0,
             hangingIndentPt: 0,
             parseInline: false,
-            role: "paragraph"
+            role: "paragraph",
+            sourceSpan: block.sourceSpan
           },
           state
         );
@@ -298,7 +305,7 @@ function layoutParagraph(text: string, style: ParagraphStyle, state: LayoutState
           state.metrics,
           false,
           true,
-          undefined,
+          { sourceSpan: style.sourceSpan },
           state.options
         )
       ];
@@ -337,7 +344,8 @@ function parseParagraphFragments(
           style.fontSizePt,
           state.metrics,
           node.style,
-          state.options
+          state.options,
+          style.sourceSpan
         )
       );
       continue;
@@ -357,7 +365,8 @@ function parseParagraphFragments(
             bold: codeStyle?.bold ?? false,
             italic: codeStyle?.italic ?? false,
             strike: codeStyle?.strike ?? false,
-            linkHref: codeStyle?.href
+            linkHref: codeStyle?.href,
+            sourceSpan: style.sourceSpan
           },
           state.options
         )
@@ -390,7 +399,7 @@ function parseParagraphFragments(
           state.metrics,
           false,
           true,
-          undefined,
+          { sourceSpan: style.sourceSpan },
           state.options
         )
       );
@@ -547,6 +556,7 @@ function layoutList(block: Extract<MarkdownBlock, { kind: "list" }>, state: Layo
     const firstIndent = depth * indentStep;
     const hangingIndent = firstIndent + Math.max(indentStep * 0.9, markerWidth);
     const fullText = `${marker} ${block.items[i]}`;
+    const itemSourceSpan = block.itemSourceSpans?.[i] ?? block.sourceSpan;
 
     layoutParagraph(
       fullText,
@@ -559,14 +569,20 @@ function layoutList(block: Extract<MarkdownBlock, { kind: "list" }>, state: Layo
         firstLineIndentPt: firstIndent,
         hangingIndentPt: hangingIndent,
         parseInline: true,
-        role: "listItem"
+        role: "listItem",
+        sourceSpan: itemSourceSpan
       },
       state
     );
   }
 }
 
-function layoutBlockquote(depth: number, text: string, state: LayoutState): void {
+function layoutBlockquote(
+  depth: number,
+  text: string,
+  state: LayoutState,
+  sourceSpan?: SourceSpan
+): void {
   const normalizedDepth = Math.max(1, Math.min(2, depth));
   const fontId = state.options.fonts.text.id;
   const codeFontId = state.options.fonts.mono?.id ?? fontId;
@@ -592,7 +608,8 @@ function layoutBlockquote(depth: number, text: string, state: LayoutState): void
       firstLineIndentPt: indent,
       hangingIndentPt: indent,
       parseInline: true,
-      role: "paragraph"
+      role: "paragraph",
+      sourceSpan
     },
     state
   );
@@ -610,7 +627,13 @@ function layoutBlockquote(depth: number, text: string, state: LayoutState): void
   }
 }
 
-function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): void {
+function layoutCodeBlock(
+  lines: string[],
+  fontId: string,
+  state: LayoutState,
+  lineSourceSpans?: Array<SourceSpan | undefined>,
+  blockSourceSpan?: SourceSpan
+): void {
   const codeOptions = state.options.features.codeBlocks;
   const resolved = state.options.page.resolved;
   const baseSize = state.options.typography.baseFontSizePt * 0.9;
@@ -645,7 +668,8 @@ function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): v
     if (segments.length === 0) {
       visualLines.push({
         text: "",
-        lineNumber: codeOptions.lineNumbers ? lineIndex + 1 : null
+        lineNumber: codeOptions.lineNumbers ? lineIndex + 1 : null,
+        sourceSpan: lineSourceSpans?.[lineIndex] ?? blockSourceSpan
       });
       continue;
     }
@@ -653,13 +677,14 @@ function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): v
     for (let i = 0; i < segments.length; i += 1) {
       visualLines.push({
         text: segments[i],
-        lineNumber: codeOptions.lineNumbers && i === 0 ? lineIndex + 1 : null
+        lineNumber: codeOptions.lineNumbers && i === 0 ? lineIndex + 1 : null,
+        sourceSpan: lineSourceSpans?.[lineIndex] ?? blockSourceSpan
       });
     }
   }
 
   if (visualLines.length === 0) {
-    visualLines.push({ text: "", lineNumber: null });
+    visualLines.push({ text: "", lineNumber: null, sourceSpan: blockSourceSpan });
   }
 
   const ascent = state.metrics.getAscent(fontId, baseSize);
@@ -746,7 +771,8 @@ function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): v
         undefined,
         undefined,
         state,
-        "code"
+        "code",
+        visual.sourceSpan
       );
       baseline += lineHeightPt;
     }
@@ -760,7 +786,7 @@ function layoutCodeBlock(lines: string[], fontId: string, state: LayoutState): v
   }
 }
 
-function layoutDisplayMath(expr: string, state: LayoutState): void {
+function layoutDisplayMath(expr: string, state: LayoutState, sourceSpan?: SourceSpan): void {
   const fontSizePt = state.options.typography.baseFontSizePt * 1.08;
   const beforePt = state.options.typography.paragraphSpacingPt * 1.2;
   const afterPt = state.options.typography.paragraphSpacingPt * 1.2;
@@ -784,7 +810,8 @@ function layoutDisplayMath(expr: string, state: LayoutState): void {
         firstLineIndentPt: 0,
         hangingIndentPt: 0,
         parseInline: false,
-        role: "paragraph"
+        role: "paragraph",
+        sourceSpan
       },
       state
     );
@@ -874,18 +901,18 @@ function layoutTableBlock(
     lineHeightPt,
     paddingXPt,
     paddingYPt,
-    cellStyle,
+    { ...cellStyle, sourceSpan: block.headerSourceSpan ?? block.sourceSpan },
     state
   );
 
-  const bodyLayouts = block.rows.map((row) =>
+  const bodyLayouts = block.rows.map((row, rowIndex) =>
     buildTableRowLayout(
       row,
       colWidths,
       lineHeightPt,
       paddingXPt,
       paddingYPt,
-      cellStyle,
+      { ...cellStyle, sourceSpan: block.rowSourceSpans?.[rowIndex] ?? block.sourceSpan },
       state
     )
   );
@@ -1469,7 +1496,8 @@ function emitFragment(
     fragment.charWidths,
     fragment,
     state,
-    role
+    role,
+    fragment.sourceSpan
   );
 
   if (fragment.strike) {
@@ -1480,7 +1508,8 @@ function emitFragment(
       xPt,
       yPt,
       wPt: fragment.width,
-      thicknessPt: strike.thicknessPt
+      thicknessPt: strike.thicknessPt,
+      sourceSpan: fragment.sourceSpan
     });
   }
 
@@ -1512,7 +1541,8 @@ function emitFragment(
         yPt: underlineY,
         wPt: fragment.width,
         thicknessPt,
-        colorRgb: [0.1, 0.2, 0.85]
+        colorRgb: [0.1, 0.2, 0.85],
+        sourceSpan: fragment.sourceSpan
       });
     }
     ops.push({
@@ -1521,7 +1551,8 @@ function emitFragment(
       yPt: baselinePt - fragment.ascent,
       wPt: fragment.width,
       hPt: fragment.ascent + fragment.descent,
-      href: fragment.linkHref
+      href: fragment.linkHref,
+      sourceSpan: fragment.sourceSpan
     });
   }
 
@@ -1549,7 +1580,8 @@ function emitTextSegment(
   precomputedCharWidths?: number[],
   fragment?: TextFragment,
   state?: LayoutState,
-  role: SpanRole = "paragraph"
+  role: SpanRole = "paragraph",
+  sourceSpan?: SourceSpan
 ): void {
   const graphemes = precomputedGraphemes ?? splitGraphemes(text);
   if (graphemes.length === 0) {
@@ -1584,7 +1616,8 @@ function emitTextSegment(
         kind: "textSpan",
         id: `span-${state.spanCounter++}`,
         role: effectiveRole,
-        ops: [glyphRun]
+        ops: [glyphRun],
+        sourceSpan
       });
     } else {
       ops.push(glyphRun);
@@ -1620,7 +1653,8 @@ function createTextFragmentsFromText(
   fontSizePt: number,
   metrics: FontMetricsProvider,
   style?: InlineTextStyle,
-  optionsForEmojiPolicy?: Pick<NormalizedTypesetOptions, "features">
+  optionsForEmojiPolicy?: Pick<NormalizedTypesetOptions, "features">,
+  sourceSpan?: SourceSpan
 ): TextFragment[] {
   const policyText = optionsForEmojiPolicy
     ? applyEmojiPolicyToText(text, optionsForEmojiPolicy)
@@ -1636,7 +1670,8 @@ function createTextFragmentsFromText(
       italic: style?.italic ?? false,
       strike: style?.strike ?? false,
       linkHref: style?.href,
-      sourceKind: "markdown"
+      sourceKind: "markdown",
+      sourceSpan
     });
 
     fragments.push(fragment);
@@ -1683,6 +1718,7 @@ function createTextFragment(
     strike?: boolean;
     linkHref?: string;
     sourceKind?: "markdown" | "math";
+    sourceSpan?: SourceSpan;
   },
   optionsForEmojiPolicy?: Pick<NormalizedTypesetOptions, "features">
 ): TextFragment {
@@ -1707,7 +1743,8 @@ function createTextFragment(
     italic: style?.italic ?? false,
     strike: style?.strike ?? false,
     linkHref: style?.linkHref,
-    sourceKind: style?.sourceKind ?? "markdown"
+    sourceKind: style?.sourceKind ?? "markdown",
+    sourceSpan: style?.sourceSpan
   };
 }
 

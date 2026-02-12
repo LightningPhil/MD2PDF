@@ -675,101 +675,236 @@ body.help-modal-open {
 }
 
 .help-modal-body {
-    padding: 1rem;
+    flex: 1;
     overflow: auto;
+    scroll-behavior: smooth;
+    padding: 1.2rem;
 }
 
-.help-wiki-layout {
+.help-modal-content {
     display: grid;
-    grid-template-columns: minmax(205px, 240px) minmax(0, 1fr);
-    gap: 1rem;
-    align-items: start;
+    grid-template-columns: 220px 1fr;
+    height: 100%;
+    overflow: hidden;
 }
 
-.help-toc {
-    position: sticky;
-    top: 0;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--surface-2) 72%, var(--surface-1) 28%);
-    padding: 0.78rem 0.82rem;
+.help-topics-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.9rem;
+    border-right: 1px solid var(--border-color);
+    background: var(--surface-2);
+    overflow-y: auto;
 }
 
-.help-toc h3 {
-    font-size: 0.89rem;
-    margin-bottom: 0.55rem;
-    color: var(--text-primary);
-}
-
-.help-toc ul {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    gap: 0.33rem;
-}
-
-.help-toc a {
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.82rem;
-    line-height: 1.32;
-}
-
-.help-toc a:hover {
-    color: var(--text-primary);
-    text-decoration: underline;
-}
-
-.help-content {
-    display: grid;
-    gap: 1rem;
-}
-
-.help-section {
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--surface-2) 72%, var(--surface-1) 28%);
-    padding: 0.85rem 0.9rem;
-}
-
-.help-section h3 {
-    font-size: 0.94rem;
-    color: var(--text-primary);
-    margin-bottom: 0.55rem;
-}
-
-.help-section p,
-.help-section li {
-    font-size: 0.86rem;
-    line-height: 1.55;
-    color: var(--text-secondary);
-}
-
-.help-section ol,
-.help-section ul {
-    padding-left: 1.1rem;
-    display: grid;
-    gap: 0.3rem;
-}
-
-.help-section pre {
-    margin-top: 0.45rem;
-    border: 1px solid var(--border-color);
+.help-topic-nav-btn {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid transparent;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--surface-3) 78%, #000 22%);
-    padding: 0.75rem;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.3;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.help-topic-nav-btn:hover {
+    background: var(--ghost-bg);
+    color: var(--text-primary);
+    border-color: var(--ghost-border);
+}
+
+.help-topic-nav-btn.active {
+    background: var(--accent-surface-20);
+    color: var(--text-primary);
+    border-color: var(--accent-border-35);
+    font-weight: 600;
+}
+
+.help-topic-nav-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.help-topics {
+    display: grid;
+    gap: 0.9rem;
+    align-content: start;
+}
+
+.help-prompt-card {
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-color));
+    border-radius: 12px;
+    background: linear-gradient(
+        155deg,
+        color-mix(in srgb, var(--accent) 16%, var(--surface-2)) 0%,
+        color-mix(in srgb, var(--surface-2) 72%, var(--surface-1) 28%) 58%
+    );
+    padding: 0.9rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.help-prompt-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.help-prompt-header-text h3 {
+    font-size: 0.95rem;
+    letter-spacing: 0.01em;
+    color: var(--text-primary);
+    margin-bottom: 0.3rem;
+}
+
+.help-prompt-header-text p {
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    max-width: 60ch;
+}
+
+.help-copy-btn {
+    border: 1px solid var(--accent-border-35);
+    background: color-mix(in srgb, var(--accent) 24%, var(--surface-2));
+    color: var(--text-primary);
+    border-radius: 8px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    padding: 0.4rem 0.58rem;
+    min-width: 3.4rem;
+    cursor: pointer;
+    transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.15s ease;
+}
+
+.help-copy-btn:hover {
+    background: color-mix(in srgb, var(--accent) 34%, var(--surface-2));
+    border-color: var(--accent-border-50);
+    transform: translateY(-1px);
+}
+
+.help-copy-btn:active {
+    transform: translateY(0);
+}
+
+.help-copy-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.help-prompt-block {
+    margin-top: 0.72rem;
+    border: 1px solid var(--border-color);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--surface-3) 86%, #000 14%);
+    padding: 0.72rem;
     overflow: auto;
 }
 
-.help-section code {
+.help-prompt-block code {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.78rem;
     color: #d9e3f5;
-}
-
-.help-section pre code {
     white-space: pre;
 }
+
+.help-copy-status {
+    min-height: 1.1rem;
+    margin-top: 0.48rem;
+    font-size: 0.76rem;
+    line-height: 1.3;
+    color: color-mix(in srgb, var(--accent) 80%, var(--text-primary) 20%);
+}
+
+.help-topic {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface-2) 74%, var(--surface-1) 26%);
+    overflow: hidden;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.help-topic-page {
+    display: none;
+}
+
+.help-topic-page.active {
+    display: block;
+}
+
+.help-topic-page h3 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--text-primary);
+    margin-bottom: 1.1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.help-topic-page > p,
+.help-topic-page > ol,
+.help-topic-page > ul {
+    margin-bottom: 0.9rem;
+}
+
+.help-topic-page > p:last-child,
+.help-topic-page > ol:last-child,
+.help-topic-page > ul:last-child {
+    margin-bottom: 0;
+}
+
+.help-topic-page p,
+.help-topic-page li {
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.help-topic-page ol,
+.help-topic-page ul {
+    padding-left: 1.3rem;
+    display: grid;
+    gap: 0.5rem;
+}
+
+.help-topic-page pre {
+    margin: 0.9rem 0;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface-3) 78%, #000 22%);
+    padding: 0.85rem;
+    overflow: auto;
+}
+
+.help-topic-page code {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.8rem;
+    color: #d9e3f5;
+}
+
+.help-topic-page pre code {
+    white-space: pre;
+}
+
+.help-topic-page strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.help-topic[open] {
+    border-color: var(--accent-border-35);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Removed old help-topic-summary and help-topic-body styles - no longer using details/summary */
 
 /* Main Container */
 .main-container {
@@ -1214,12 +1349,22 @@ body.help-modal-open {
         height: min(90vh, 760px);
     }
 
-    .help-wiki-layout {
-        grid-template-columns: 1fr;
+    .help-modal-content {
+        grid-template-columns: 180px 1fr;
     }
 
-    .help-toc {
-        position: static;
+    .help-topic-nav-btn {
+        font-size: 0.8rem;
+        padding: 0.5rem 0.65rem;
+    }
+
+    .help-prompt-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .help-copy-btn {
+        align-self: flex-start;
     }
 }
 

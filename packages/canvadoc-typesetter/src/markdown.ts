@@ -1,3 +1,5 @@
+import type { SourceSpan } from "./types";
+
 /**
  * Parsed markdown block types.
  *
@@ -11,22 +13,42 @@
  * - `table`: Pipe tables with alignment
  * - `hr`: Horizontal rules
  */
+type MarkdownSourceMetadata = {
+  sourceSpan?: SourceSpan;
+};
+
 export type MarkdownBlock =
-  | { kind: "heading"; level: 1 | 2 | 3; text: string }
-  | { kind: "paragraph"; text: string }
-  | {
+  | (MarkdownSourceMetadata & { kind: "heading"; level: 1 | 2 | 3; text: string })
+  | (MarkdownSourceMetadata & { kind: "paragraph"; text: string })
+  | (MarkdownSourceMetadata & {
       kind: "list";
       ordered: boolean;
       items: string[];
       itemDepths?: number[];
       itemKinds?: Array<"ordered" | "unordered">;
       itemNumbers?: Array<number | null>;
-    }
-  | { kind: "blockquote"; depth: number; text: string }
-  | { kind: "code"; lines: string[] }
-  | { kind: "displayMath"; expr: string }
-  | { kind: "table"; header: string[]; align: TableAlign[]; rows: string[][] }
-  | { kind: "hr" };
+      itemSourceSpans?: Array<SourceSpan | undefined>;
+    })
+  | (MarkdownSourceMetadata & { kind: "blockquote"; depth: number; text: string })
+  | (MarkdownSourceMetadata & { kind: "code"; lines: string[]; lineSourceSpans?: Array<SourceSpan | undefined> })
+  | (MarkdownSourceMetadata & { kind: "displayMath"; expr: string })
+  | (MarkdownSourceMetadata & {
+      kind: "table";
+      header: string[];
+      align: TableAlign[];
+      rows: string[][];
+      headerSourceSpan?: SourceSpan;
+      rowSourceSpans?: Array<SourceSpan | undefined>;
+    })
+  | (MarkdownSourceMetadata & { kind: "hr" });
+
+export type ParseMarkdownOptions = {
+  /**
+   * Include source-span metadata on returned blocks.
+   * Disabled by default to preserve backwards-compatible parser output.
+   */
+  includeSourceSpans?: boolean;
+};
 
 /**
  * Table column alignment.
@@ -70,9 +92,35 @@ const BLOCKQUOTE_RE = /^(\s*(?:>\s*)+)(.*)$/;
  * // Returns: [{ kind: "heading", level: 1, text: "Title" }, ...]
  * ```
  */
-export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+export function parseMarkdownBlocks(markdown: string, options: ParseMarkdownOptions = {}): MarkdownBlock[] {
+  const normalized = markdown.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.split("\n");
+  const lineStarts = getLineStartOffsets(normalized);
+  const includeSourceSpans = options.includeSourceSpans === true;
   const blocks: MarkdownBlock[] = [];
+
+  const makeSourceSpan = (startLine: number, endLine: number): SourceSpan | undefined => {
+    if (!includeSourceSpans) {
+      return undefined;
+    }
+    const start = lineStarts[startLine] ?? 0;
+    const endLineStart = lineStarts[endLine] ?? start;
+    const endLineText = lines[endLine] ?? "";
+    const end = endLineStart + endLineText.length;
+    return {
+      start,
+      end: Math.max(start, end),
+      kind: "markdown",
+    };
+  };
+
+  const attachSourceSpan = <T extends object>(block: T, startLine: number, endLine: number): T => {
+    const sourceSpan = makeSourceSpan(startLine, endLine);
+    if (!sourceSpan) {
+      return block;
+    }
+    return { ...block, sourceSpan };
+  };
 
   let i = 0;
   while (i < lines.length) {
@@ -85,23 +133,34 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
     }
 
     if (line.startsWith("```")) {
+      const blockStartLine = i;
       const codeLines: string[] = [];
+      const lineSourceSpans: Array<SourceSpan | undefined> = [];
       i += 1;
       while (i < lines.length && !(lines[i] ?? "").trim().startsWith("```")) {
         codeLines.push(lines[i] ?? "");
+        if (includeSourceSpans) {
+          lineSourceSpans.push(makeSourceSpan(i, i));
+        }
         i += 1;
       }
       if (i < lines.length) {
         i += 1;
       }
-      blocks.push({ kind: "code", lines: codeLines });
+      const blockEndLine = Math.max(blockStartLine, i - 1);
+      const block: Extract<MarkdownBlock, { kind: "code" }> = { kind: "code", lines: codeLines };
+      if (includeSourceSpans) {
+        block.lineSourceSpans = lineSourceSpans;
+      }
+      blocks.push(attachSourceSpan(block, blockStartLine, blockEndLine));
       continue;
     }
 
     if (line.startsWith("$$")) {
+      const blockStartLine = i;
       const inlineExpr = extractSingleLineDisplayMath(line);
       if (inlineExpr !== null) {
-        blocks.push({ kind: "displayMath", expr: inlineExpr });
+        blocks.push(attachSourceSpan({ kind: "displayMath", expr: inlineExpr }, blockStartLine, blockStartLine));
         i += 1;
         continue;
       }
@@ -117,18 +176,24 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         mathLines.push(last.slice(0, Math.max(0, last.length - 2)).trim());
         i += 1;
       }
-      blocks.push({ kind: "displayMath", expr: mathLines.join(" ").trim() });
+      const blockEndLine = Math.max(blockStartLine, i - 1);
+      blocks.push(
+        attachSourceSpan({ kind: "displayMath", expr: mathLines.join(" ").trim() }, blockStartLine, blockEndLine)
+      );
       continue;
     }
 
     if (i + 1 < lines.length && looksLikeTable(lines[i] ?? "", lines[i + 1] ?? "")) {
+      const blockStartLine = i;
       const rawHeader = parseTableRow(lines[i] ?? "");
       const rawAlign = parseTableRow(lines[i + 1] ?? "");
       const columnCount = Math.max(rawHeader.length, rawAlign.length);
       const header = normalizeTableCells(rawHeader, columnCount);
       const align = parseTableAlignments(rawAlign, columnCount);
+      const headerSourceSpan = makeSourceSpan(i, i);
 
       const rows: string[][] = [];
+      const rowSourceSpans: Array<SourceSpan | undefined> = [];
       i += 2;
       while (i < lines.length) {
         const candidate = lines[i] ?? "";
@@ -140,74 +205,106 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
           break;
         }
         rows.push(normalizeTableCells(parseTableRow(candidate), columnCount));
+        if (includeSourceSpans) {
+          rowSourceSpans.push(makeSourceSpan(i, i));
+        }
         i += 1;
       }
 
-      blocks.push({ kind: "table", header, align, rows });
+      const blockEndLine = Math.max(blockStartLine, i - 1);
+      const block: Extract<MarkdownBlock, { kind: "table" }> = { kind: "table", header, align, rows };
+      if (includeSourceSpans) {
+        block.headerSourceSpan = headerSourceSpan;
+        block.rowSourceSpans = rowSourceSpans;
+      }
+      blocks.push(attachSourceSpan(block, blockStartLine, blockEndLine));
       continue;
     }
 
     const headingMatch = raw.match(HEADING_RE);
     if (headingMatch) {
       const hashCount = headingMatch[1].length;
-      blocks.push({
-        kind: "heading",
-        level: hashCount as 1 | 2 | 3,
-        text: headingMatch[2].trim()
-      });
+      blocks.push(
+        attachSourceSpan(
+          {
+            kind: "heading",
+            level: hashCount as 1 | 2 | 3,
+            text: headingMatch[2].trim()
+          },
+          i,
+          i
+        )
+      );
       i += 1;
       continue;
     }
 
     if (line === "---") {
-      blocks.push({ kind: "hr" });
+      blocks.push(attachSourceSpan({ kind: "hr" }, i, i));
       i += 1;
       continue;
     }
 
     const quoteMatch = raw.match(BLOCKQUOTE_RE);
     if (quoteMatch) {
-      const quoteLines: Array<{ depth: number; text: string }> = [];
+      const quoteLines: Array<{ depth: number; text: string; lineIndex: number }> = [];
       while (i < lines.length) {
         const lineMatch = (lines[i] ?? "").match(BLOCKQUOTE_RE);
         if (!lineMatch) {
           break;
         }
         const depth = Math.max(1, Math.min(2, (lineMatch[1].match(/>/g) ?? []).length));
-        quoteLines.push({ depth, text: lineMatch[2] ?? "" });
+        quoteLines.push({ depth, text: lineMatch[2] ?? "", lineIndex: i });
         i += 1;
       }
 
       let segmentDepth = quoteLines[0]?.depth ?? 1;
       let segment: string[] = [];
+      let segmentStartLine = quoteLines[0]?.lineIndex ?? 0;
       for (const quoteLine of quoteLines) {
         if (quoteLine.depth !== segmentDepth && segment.length > 0) {
-          blocks.push({
-            kind: "blockquote",
-            depth: segmentDepth,
-            text: combineParagraphLines(segment)
-          });
+          blocks.push(
+            attachSourceSpan(
+              {
+                kind: "blockquote",
+                depth: segmentDepth,
+                text: combineParagraphLines(segment)
+              },
+              segmentStartLine,
+              (quoteLine.lineIndex ?? segmentStartLine) - 1
+            )
+          );
           segment = [];
           segmentDepth = quoteLine.depth;
+          segmentStartLine = quoteLine.lineIndex;
         }
         segment.push(quoteLine.text);
       }
       if (segment.length > 0) {
-        blocks.push({
-          kind: "blockquote",
-          depth: segmentDepth,
-          text: combineParagraphLines(segment)
-        });
+        const segmentEndLine = quoteLines[quoteLines.length - 1]?.lineIndex ?? segmentStartLine;
+        blocks.push(
+          attachSourceSpan(
+            {
+              kind: "blockquote",
+              depth: segmentDepth,
+              text: combineParagraphLines(segment)
+            },
+            segmentStartLine,
+            segmentEndLine
+          )
+        );
       }
       continue;
     }
 
     const listMatch = raw.match(LIST_ITEM_RE);
     if (listMatch) {
+      const blockStartLine = i;
       const items: string[] = [];
       const itemDepths: number[] = [];
       const itemKinds: Array<"ordered" | "unordered"> = [];
       const itemNumbers: Array<number | null> = [];
+      const itemSourceSpans: Array<SourceSpan | undefined> = [];
       let firstOrdered = /^\d+\.$/.test(listMatch[2]);
       while (i < lines.length) {
         const next = (lines[i] ?? "").match(LIST_ITEM_RE);
@@ -222,6 +319,9 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         itemDepths.push(depth);
         itemKinds.push(isOrdered ? "ordered" : "unordered");
         itemNumbers.push(isOrdered ? parseInt(marker.slice(0, -1), 10) : null);
+        if (includeSourceSpans) {
+          itemSourceSpans.push(makeSourceSpan(i, i));
+        }
         i += 1;
       }
       const hasNested = itemDepths.some((depth) => depth > 0);
@@ -238,10 +338,15 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         listBlock.itemKinds = itemKinds;
         listBlock.itemNumbers = itemNumbers;
       }
-      blocks.push(listBlock);
+      if (includeSourceSpans) {
+        listBlock.itemSourceSpans = itemSourceSpans;
+      }
+      const blockEndLine = Math.max(blockStartLine, i - 1);
+      blocks.push(attachSourceSpan(listBlock, blockStartLine, blockEndLine));
       continue;
     }
 
+    const paragraphStartLine = i;
     const paragraphLines: string[] = [];
     while (i < lines.length && !isBlockStart(lines[i] ?? "")) {
       const nextRaw = lines[i] ?? "";
@@ -251,7 +356,14 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       paragraphLines.push(nextRaw);
       i += 1;
     }
-    blocks.push({ kind: "paragraph", text: combineParagraphLines(paragraphLines) });
+    const paragraphEndLine = Math.max(paragraphStartLine, i - 1);
+    blocks.push(
+      attachSourceSpan(
+        { kind: "paragraph", text: combineParagraphLines(paragraphLines) },
+        paragraphStartLine,
+        paragraphEndLine
+      )
+    );
 
     while (i < lines.length && !(lines[i] ?? "").trim()) {
       i += 1;
@@ -259,6 +371,16 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
   }
 
   return blocks;
+}
+
+function getLineStartOffsets(source: string): number[] {
+  const starts: number[] = [0];
+  for (let i = 0; i < source.length; i += 1) {
+    if (source[i] === "\n") {
+      starts.push(i + 1);
+    }
+  }
+  return starts;
 }
 
 function extractSingleLineDisplayMath(line: string): string | null {

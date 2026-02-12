@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "pnpm run build:typesetter && tsc && vite build",
+    "build:typesetter": "pnpm exec tsc -p packages/canvadoc-typesetter/tsconfig.json",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

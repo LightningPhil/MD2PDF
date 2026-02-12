@@ -384,25 +384,35 @@ export class PageManager {
     }
 
     // Find the best matching source mapping entry
+    const containingEntries: SourceMappingEntry[] = [];
     let bestEntry: SourceMappingEntry | null = null;
     let bestDistance = Infinity;
 
     for (const entry of this.sourceMapping) {
-      if (entry.pageIndex === targetPageIndex) {
-        // Check if click is within this block's y-range.
-        if (yOnPagePt >= entry.yStartPt && yOnPagePt <= entry.yEndPt) {
-          return this.estimateSourceLineForEntryAtY(entry, yOnPagePt);
-        }
-
-        // Track closest block.
-        const distance = yOnPagePt < entry.yStartPt
-          ? entry.yStartPt - yOnPagePt
-          : yOnPagePt - entry.yEndPt;
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestEntry = entry;
-        }
+      if (entry.pageIndex !== targetPageIndex) {
+        continue;
       }
+
+      // Track overlapping entries first; they can happen when one mapping block covers
+      // a broad source range and nested blocks add more specific ranges.
+      if (yOnPagePt >= entry.yStartPt && yOnPagePt <= entry.yEndPt) {
+        containingEntries.push(entry);
+        continue;
+      }
+
+      // Track closest block.
+      const distance = yOnPagePt < entry.yStartPt
+        ? entry.yStartPt - yOnPagePt
+        : yOnPagePt - entry.yEndPt;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestEntry = entry;
+      }
+    }
+
+    if (containingEntries.length > 0) {
+      const selectedEntry = this.selectBestEntryForCanvasY(containingEntries, yOnPagePt);
+      return this.estimateSourceLineForEntryAtY(selectedEntry, yOnPagePt);
     }
 
     if (!bestEntry) {
@@ -422,13 +432,14 @@ export class PageManager {
     }
 
     // Find the mapping entry that contains this line
+    const exactEntries: SourceMappingEntry[] = [];
     let bestEntry: SourceMappingEntry | null = null;
     let bestDistance = Infinity;
 
     for (const entry of this.sourceMapping) {
       if (lineNumber >= entry.sourceLineStart && lineNumber <= entry.sourceLineEnd) {
-        bestEntry = entry;
-        break;
+        exactEntries.push(entry);
+        continue;
       }
 
       // Track closest if no exact match
@@ -439,6 +450,10 @@ export class PageManager {
         bestDistance = distance;
         bestEntry = entry;
       }
+    }
+
+    if (exactEntries.length > 0) {
+      bestEntry = this.selectBestEntryForSourceLine(exactEntries, lineNumber);
     }
 
     if (!bestEntry) {
@@ -489,6 +504,80 @@ export class PageManager {
     const lineCount = (endLine - startLine) + 1;
     const lineOffset = Math.min(lineCount - 1, Math.floor(normalizedY * lineCount));
     return startLine + lineOffset;
+  }
+
+  private selectBestEntryForCanvasY(
+    entries: readonly SourceMappingEntry[],
+    yOnPagePt: number,
+  ): SourceMappingEntry {
+    let bestEntry = entries[0];
+    let bestRangeSpan = this.getSourceLineSpan(bestEntry);
+    let bestCenterDistance = Math.abs(this.getEntryCenterYPt(bestEntry) - yOnPagePt);
+
+    for (let i = 1; i < entries.length; i += 1) {
+      const candidate = entries[i];
+      const candidateRangeSpan = this.getSourceLineSpan(candidate);
+      const candidateCenterDistance = Math.abs(this.getEntryCenterYPt(candidate) - yOnPagePt);
+      if (
+        candidateRangeSpan < bestRangeSpan ||
+        (candidateRangeSpan === bestRangeSpan && candidateCenterDistance < bestCenterDistance)
+      ) {
+        bestEntry = candidate;
+        bestRangeSpan = candidateRangeSpan;
+        bestCenterDistance = candidateCenterDistance;
+      }
+    }
+
+    return bestEntry;
+  }
+
+  private selectBestEntryForSourceLine(
+    entries: readonly SourceMappingEntry[],
+    lineNumber: number,
+  ): SourceMappingEntry {
+    if (entries.length === 1) {
+      return entries[0];
+    }
+
+    const smallestRangeSpan = entries.reduce(
+      (smallest, entry) => Math.min(smallest, this.getSourceLineSpan(entry)),
+      Number.POSITIVE_INFINITY,
+    );
+    const mostSpecificEntries = entries
+      .filter((entry) => this.getSourceLineSpan(entry) === smallestRangeSpan)
+      .slice()
+      .sort((a, b) => {
+        if (a.pageIndex !== b.pageIndex) {
+          return a.pageIndex - b.pageIndex;
+        }
+        return a.yStartPt - b.yStartPt;
+      });
+
+    if (mostSpecificEntries.length === 1) {
+      return mostSpecificEntries[0];
+    }
+
+    const minLine = mostSpecificEntries.reduce(
+      (minValue, entry) => Math.min(minValue, entry.sourceLineStart),
+      Number.POSITIVE_INFINITY,
+    );
+    const maxLine = mostSpecificEntries.reduce(
+      (maxValue, entry) => Math.max(maxValue, entry.sourceLineEnd),
+      Number.NEGATIVE_INFINITY,
+    );
+    const span = Math.max(1, maxLine - minLine);
+    const clampedLine = this.clamp(Math.floor(lineNumber), minLine, maxLine);
+    const normalized = (clampedLine - minLine) / span;
+    const selectedIndex = Math.round(normalized * (mostSpecificEntries.length - 1));
+    return mostSpecificEntries[this.clamp(selectedIndex, 0, mostSpecificEntries.length - 1)];
+  }
+
+  private getSourceLineSpan(entry: SourceMappingEntry): number {
+    return Math.max(0, entry.sourceLineEnd - entry.sourceLineStart);
+  }
+
+  private getEntryCenterYPt(entry: SourceMappingEntry): number {
+    return (entry.yStartPt + entry.yEndPt) / 2;
   }
 
   private getEntryCanvasPositionForLine(

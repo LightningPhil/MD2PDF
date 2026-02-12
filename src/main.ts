@@ -27,6 +27,7 @@ class MD2PDFApp {
   private isSwitchingDocument = false;
   private isExporting = false;
   private untitledCounter = 1;
+  private previewSyncTimeout: number | null = null;
 
   constructor() {
     try {
@@ -139,19 +140,8 @@ class MD2PDFApp {
       }
     });
 
-    // Bidirectional scroll sync: editor cursor -> preview (debounced)
-    let scrollSyncTimeout: ReturnType<typeof setTimeout> | null = null;
     this.editor.onCursorLineChange((lineNumber) => {
-      if (scrollSyncTimeout) {
-        clearTimeout(scrollSyncTimeout);
-      }
-      scrollSyncTimeout = setTimeout(() => {
-        const result = this.pageManager.getCanvasYFromSourceLine(lineNumber);
-        if (result !== null) {
-          this.ui.scrollPreviewToY(result.y);
-          this.ui.highlightCanvasRegion(result.y, result.height);
-        }
-      }, 150);
+      this.schedulePreviewSync(lineNumber, true);
     });
   }
 
@@ -309,7 +299,35 @@ class MD2PDFApp {
       active.pageCount = this.pageManager.getPageCount();
       this.ui.refreshPreviewViewport();
       this.refreshDocumentList();
+      this.schedulePreviewSync(this.editor.getCurrentLineNumber(), false);
     });
+  }
+
+  private schedulePreviewSync(lineNumber: number, highlight: boolean): void {
+    if (!Number.isFinite(lineNumber) || lineNumber < 1) {
+      return;
+    }
+
+    if (this.previewSyncTimeout !== null) {
+      window.clearTimeout(this.previewSyncTimeout);
+    }
+
+    this.previewSyncTimeout = window.setTimeout(() => {
+      this.previewSyncTimeout = null;
+      this.syncPreviewToSourceLine(lineNumber, highlight);
+    }, 140);
+  }
+
+  private syncPreviewToSourceLine(lineNumber: number, highlight: boolean): void {
+    const result = this.pageManager.getCanvasYFromSourceLine(lineNumber);
+    if (!result) {
+      return;
+    }
+
+    this.ui.scrollPreviewToY(result.y);
+    if (highlight) {
+      this.ui.highlightCanvasRegion(result.y, result.height);
+    }
   }
 
   private async recomputeInactivePageCounts(): Promise<void> {

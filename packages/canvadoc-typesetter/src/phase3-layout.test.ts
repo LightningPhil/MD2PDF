@@ -78,6 +78,48 @@ describe("phase 3 layout integration", () => {
     expect(ops.some((op) => op.kind === "link")).toBe(true);
   });
 
+  it("emits source spans through tables and subsequent paragraphs", async () => {
+    const typesetter = createTestTypesetter();
+    const markdown = [
+      "Before table",
+      "",
+      "| A | B |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "| 3 | 4 |",
+      "",
+      "After table"
+    ].join("\n");
+
+    const result = await typesetter.typeset(markdown);
+    const ops = collectOps(result.pages);
+    const textSpans = ops.filter(
+      (op): op is Extract<DrawOp, { kind: "textSpan" }> => op.kind === "textSpan"
+    );
+
+    const tableRowStart = markdown.indexOf("| 3 | 4 |");
+    const afterParagraphStart = markdown.indexOf("After table");
+    const hasTableRowMapping = textSpans.some((op) => {
+      const span = op.sourceSpan;
+      return (
+        span?.kind === "markdown" &&
+        span.start <= tableRowStart &&
+        span.end >= tableRowStart + 3
+      );
+    });
+    const hasAfterParagraphMapping = textSpans.some((op) => {
+      const span = op.sourceSpan;
+      return (
+        span?.kind === "markdown" &&
+        span.start <= afterParagraphStart &&
+        span.end >= afterParagraphStart + 3
+      );
+    });
+
+    expect(hasTableRowMapping).toBe(true);
+    expect(hasAfterParagraphMapping).toBe(true);
+  });
+
   it("emits strikethrough ops and no link underline by default", async () => {
     const typesetter = createTestTypesetter();
     const result = await typesetter.typeset("~~struck~~ and [linked](https://example.com)");

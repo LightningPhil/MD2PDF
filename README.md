@@ -43,6 +43,8 @@ Open `http://localhost:5173`.
 npm run build
 ```
 
+Outputs to `dist/` directory.
+
 ## Commands
 
 - `npm run typecheck` - TypeScript checks

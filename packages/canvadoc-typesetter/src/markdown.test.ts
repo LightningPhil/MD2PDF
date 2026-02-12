@@ -216,6 +216,69 @@ describe('parseMarkdownBlocks', () => {
     });
   });
 
+  describe('source spans', () => {
+    it('can attach source spans to headings and paragraphs', () => {
+      const markdown = '# Title\n\nBody line';
+      const result = parseMarkdownBlocks(markdown, { includeSourceSpans: true });
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({
+        kind: 'heading',
+        sourceSpan: { start: 0, end: 7, kind: 'markdown' },
+      });
+      expect(result[1]).toMatchObject({
+        kind: 'paragraph',
+        sourceSpan: { start: 9, end: 18, kind: 'markdown' },
+      });
+    });
+
+    it('tracks per-item source spans for lists', () => {
+      const markdown = '- one\n  2. two\n- three';
+      const result = parseMarkdownBlocks(markdown, { includeSourceSpans: true });
+      const list = result[0];
+
+      expect(list?.kind).toBe('list');
+      if (list?.kind !== 'list') {
+        return;
+      }
+
+      expect(list.itemSourceSpans).toHaveLength(3);
+      expect(list.itemSourceSpans?.map((span) => span?.start)).toEqual([0, 6, 15]);
+      expect(list.itemSourceSpans?.map((span) => span?.end)).toEqual([5, 14, 22]);
+    });
+
+    it('tracks header and row source spans for tables', () => {
+      const markdown = '| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |';
+      const result = parseMarkdownBlocks(markdown, { includeSourceSpans: true });
+      const table = result[0];
+
+      expect(table?.kind).toBe('table');
+      if (table?.kind !== 'table') {
+        return;
+      }
+
+      expect(table.headerSourceSpan?.start).toBe(markdown.indexOf('| A | B |'));
+      expect(table.rowSourceSpans).toHaveLength(2);
+      expect(table.rowSourceSpans?.[0]?.start).toBe(markdown.indexOf('| 1 | 2 |'));
+      expect(table.rowSourceSpans?.[1]?.start).toBe(markdown.indexOf('| 3 | 4 |'));
+    });
+
+    it('tracks per-line source spans for code blocks', () => {
+      const markdown = '```\nalpha\nbeta\n```';
+      const result = parseMarkdownBlocks(markdown, { includeSourceSpans: true });
+      const code = result[0];
+
+      expect(code?.kind).toBe('code');
+      if (code?.kind !== 'code') {
+        return;
+      }
+
+      expect(code.lineSourceSpans).toHaveLength(2);
+      expect(code.lineSourceSpans?.[0]?.start).toBe(markdown.indexOf('alpha'));
+      expect(code.lineSourceSpans?.[1]?.start).toBe(markdown.indexOf('beta'));
+    });
+  });
+
   describe('mixed content', () => {
     it('parses multiple block types correctly', () => {
       const markdown = `# Title

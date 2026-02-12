@@ -121,7 +121,13 @@ export class UIController {
   private exportDismissBtn: HTMLButtonElement;
 
   private helpModalBackdrop: HTMLElement;
+  private helpModalBody: HTMLElement;
   private helpModalCloseBtn: HTMLButtonElement;
+  private helpTopicNavBtns: HTMLButtonElement[];
+  private helpTopicPages: HTMLElement[];
+  private llmPromptCopyBtn: HTMLButtonElement;
+  private llmPromptText: HTMLElement;
+  private llmPromptCopyStatus: HTMLElement;
 
   // Header/Footer modal elements
   private headerFooterBtn: HTMLButtonElement;
@@ -179,6 +185,7 @@ export class UIController {
   private isExporting = false;
   private isHelpModalOpen = false;
   private isHfModalOpen = false;
+  private llmPromptCopyStatusTimer: number | null = null;
   private exportContext: ExportModalContext = {
     activeFilename: 'Untitled.md',
     totalFiles: 1,
@@ -295,7 +302,18 @@ export class UIController {
     this.exportCancelBtn = this.requireElement<HTMLButtonElement>('exportCancelBtn');
     this.exportDismissBtn = this.requireElement<HTMLButtonElement>('exportDismissBtn');
     this.helpModalBackdrop = this.requireElement<HTMLElement>('helpModalBackdrop');
+    this.helpModalBody = this.requireElement<HTMLElement>('helpModalBody');
     this.helpModalCloseBtn = this.requireElement<HTMLButtonElement>('helpModalCloseBtn');
+    this.llmPromptCopyBtn = this.requireElement<HTMLButtonElement>('llmPromptCopyBtn');
+    this.llmPromptText = this.requireElement<HTMLElement>('llmPromptText');
+    this.llmPromptCopyStatus = this.requireElement<HTMLElement>('llmPromptCopyStatus');
+    
+    this.helpTopicNavBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.help-topic-nav-btn'));
+    this.helpTopicPages = Array.from(document.querySelectorAll<HTMLElement>('.help-topic-page'));
+    
+    if (this.helpTopicNavBtns.length === 0 || this.helpTopicPages.length === 0) {
+      throw new Error('Help modal requires topic navigation buttons and pages');
+    }
 
     // Header/Footer modal elements
     this.headerFooterBtn = this.requireElement<HTMLButtonElement>('headerFooterBtn');
@@ -857,6 +875,19 @@ export class UIController {
       this.closeHelpModal();
     });
 
+    this.llmPromptCopyBtn.addEventListener('click', () => {
+      void this.copyLlmPromptHeader();
+    });
+
+    this.helpTopicNavBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const topic = btn.dataset.topic;
+        if (topic) {
+          this.switchHelpTopic(topic);
+        }
+      });
+    });
+
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && this.isExportModalOpen && !this.isExporting) {
         event.preventDefault();
@@ -1097,6 +1128,8 @@ export class UIController {
     this.helpModalBackdrop.hidden = false;
     document.body.classList.add('help-modal-open');
     this.isHelpModalOpen = true;
+    this.resetLlmPromptCopyStatus();
+    this.helpModalBody.scrollTop = 0;
     this.helpModalCloseBtn.focus();
   }
 
@@ -1104,6 +1137,92 @@ export class UIController {
     this.helpModalBackdrop.hidden = true;
     document.body.classList.remove('help-modal-open');
     this.isHelpModalOpen = false;
+    this.resetLlmPromptCopyStatus();
+  }
+
+  private switchHelpTopic(topicId: string): void {
+    // Update navigation buttons
+    this.helpTopicNavBtns.forEach((btn) => {
+      if (btn.dataset.topic === topicId) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    // Update topic pages
+    this.helpTopicPages.forEach((page) => {
+      if (page.dataset.topic === topicId) {
+        page.classList.add('active');
+      } else {
+        page.classList.remove('active');
+      }
+    });
+
+    // Scroll to top of content
+    this.helpModalBody.scrollTop = 0;
+  }
+
+  private async copyLlmPromptHeader(): Promise<void> {
+    const promptText = this.llmPromptText.textContent?.trim() ?? '';
+    if (!promptText) {
+      this.setLlmPromptCopyStatus('Prompt text unavailable.');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(promptText);
+      } else {
+        this.copyTextFallback(promptText);
+      }
+
+      this.setLlmPromptCopyStatus('Prompt copied.', true);
+    } catch (error) {
+      console.error('Failed to copy LLM prompt header:', error);
+      this.setLlmPromptCopyStatus('Copy failed. Use Ctrl+C.');
+    }
+  }
+
+  private copyTextFallback(text: string): void {
+    const fallbackTextarea = document.createElement('textarea');
+    fallbackTextarea.value = text;
+    fallbackTextarea.readOnly = true;
+    fallbackTextarea.style.position = 'fixed';
+    fallbackTextarea.style.left = '-9999px';
+    fallbackTextarea.style.top = '0';
+    document.body.appendChild(fallbackTextarea);
+    fallbackTextarea.select();
+    fallbackTextarea.setSelectionRange(0, fallbackTextarea.value.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(fallbackTextarea);
+
+    if (!copied) {
+      throw new Error('Fallback clipboard copy failed');
+    }
+  }
+
+  private setLlmPromptCopyStatus(message: string, copied = false): void {
+    this.llmPromptCopyStatus.textContent = message;
+    this.llmPromptCopyBtn.textContent = copied ? 'Copied' : 'Copy';
+
+    if (this.llmPromptCopyStatusTimer !== null) {
+      window.clearTimeout(this.llmPromptCopyStatusTimer);
+    }
+
+    this.llmPromptCopyStatusTimer = window.setTimeout(() => {
+      this.resetLlmPromptCopyStatus();
+    }, 1800);
+  }
+
+  private resetLlmPromptCopyStatus(): void {
+    if (this.llmPromptCopyStatusTimer !== null) {
+      window.clearTimeout(this.llmPromptCopyStatusTimer);
+      this.llmPromptCopyStatusTimer = null;
+    }
+
+    this.llmPromptCopyStatus.textContent = '';
+    this.llmPromptCopyBtn.textContent = 'Copy';
   }
 
   private openHfModal(): void {

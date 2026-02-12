@@ -134,6 +134,25 @@ describe('MarkdownEditor', () => {
     expect(reportedLine).toBe(3)
   })
 
+  it('onCursorLineChange reacts to input events while typing', () => {
+    const editor = new MarkdownEditor('testEditor')
+    textarea.value = 'Line 1\nLine 2'
+
+    let reportedLine = 0
+    editor.onCursorLineChange((lineNumber) => {
+      reportedLine = lineNumber
+    })
+
+    textarea.selectionStart = textarea.value.length
+    textarea.selectionEnd = textarea.value.length
+    textarea.value += '\nLine 3'
+    textarea.selectionStart = textarea.value.length
+    textarea.selectionEnd = textarea.value.length
+
+    textarea.dispatchEvent(new Event('input'))
+    expect(reportedLine).toBe(3)
+  })
+
   it('revealLine moves selection to requested line', () => {
     const editor = new MarkdownEditor('testEditor')
     textarea.value = 'alpha\nbeta\ngamma'

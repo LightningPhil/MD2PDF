@@ -188,44 +188,71 @@ $$
     <div id="helpModalBackdrop" class="help-modal-backdrop" hidden>
         <div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
             <div class="help-modal-header">
-                <h2 id="helpModalTitle">MD2PDF Help Wiki</h2>
+                <h2 id="helpModalTitle">MD2PDF Help Center</h2>
                 <button id="helpModalCloseBtn" class="help-close-btn" type="button" aria-label="Close help dialog" title="Close help dialog">&times;</button>
             </div>
-            <div id="helpModalBody" class="help-modal-body">
-                <div class="help-wiki-layout">
-                    <nav class="help-toc" aria-label="Help topics">
-                        <h3>Contents</h3>
-                        <ul>
-                            <li><a href="#help-getting-started">Getting Started</a></li>
-                            <li><a href="#help-template">Full Markdown Template</a></li>
-                            <li><a href="#help-formatting">Formatting Guide</a></li>
-                            <li><a href="#help-tables-code">Tables and Code</a></li>
-                            <li><a href="#help-math">Math and Matrices</a></li>
-                            <li><a href="#help-navigation">Navigation and Focus Sync</a></li>
-                            <li><a href="#help-pagination">Pagination Tips</a></li>
-                            <li><a href="#help-export">Export Workflows</a></li>
-                            <li><a href="#help-troubleshooting">Troubleshooting</a></li>
-                        </ul>
-                    </nav>
+            <div class="help-modal-content">
+                <nav class="help-topics-nav" aria-label="Help topics">
+                    <button class="help-topic-nav-btn active" data-topic="llm-prompt">LLM Markdown Header</button>
+                    <button class="help-topic-nav-btn" data-topic="getting-started">Getting Started</button>
+                    <button class="help-topic-nav-btn" data-topic="template">Full Markdown Template</button>
+                    <button class="help-topic-nav-btn" data-topic="formatting">Formatting Guide</button>
+                    <button class="help-topic-nav-btn" data-topic="tables-code">Tables and Code</button>
+                    <button class="help-topic-nav-btn" data-topic="math">Math and Matrices</button>
+                    <button class="help-topic-nav-btn" data-topic="navigation">Navigation and Focus</button>
+                    <button class="help-topic-nav-btn" data-topic="pagination">Pagination Tips</button>
+                    <button class="help-topic-nav-btn" data-topic="export">Export Workflows</button>
+                    <button class="help-topic-nav-btn" data-topic="troubleshooting">Troubleshooting</button>
+                </nav>
+                <div id="helpModalBody" class="help-modal-body">
+                    <section class="help-topic-page active" data-topic="llm-prompt">
+                        <div class="help-prompt-card">
+                            <div class="help-prompt-header">
+                                <div class="help-prompt-header-text">
+                                    <h3 id="llmPromptTitle">LLM Markdown Header</h3>
+                                    <p>Paste this at the top of an LLM chat before your source content to keep output compatible with MD2PDF.</p>
+                                </div>
+                                <button id="llmPromptCopyBtn" class="help-copy-btn" type="button" aria-label="Copy LLM markdown header prompt" title="Copy prompt header">Copy</button>
+                            </div>
+                            <pre class="help-prompt-block"><code id="llmPromptText">[MD2PDF MARKDOWN FORMATTER HEADER]
 
-                    <div class="help-content">
-                        <section class="help-section" id="help-getting-started">
-                            <h3>Getting Started</h3>
-                            <ol>
-                                <li>Load one or more markdown files with <strong>Upload</strong>, or start typing immediately.</li>
-                                <li>Choose the active document in <strong>Open Files</strong> (left panel).</li>
-                                <li>Set <strong>Font</strong>, <strong>Margin</strong>, and <strong>Page size</strong> in the toolbar.</li>
-                                <li>Use preview controls: <strong>Fit Width</strong>, <strong>Fit Page</strong>, <strong>Zoom +/-</strong>.</li>
-                                <li>Click <strong>Export PDF</strong> and choose current file or all open files.</li>
-                            </ol>
-                            <p>Tip: keep <strong>Fit Width</strong> while editing, and switch to <strong>Fit Page</strong> for final visual QA.</p>
-                        </section>
+You are formatting content for the MD2PDF app.
+I will send source content after this header.
 
-                        <section class="help-section" id="help-template">
-                            <h3>Full Markdown Template (Copy/Paste Starter)</h3>
-                            <pre><code># Project Document Title
+Output rules:
+- Return Markdown only.
+- Do not wrap the full answer in triple backticks.
+- Use only these features: headings, paragraphs, bold/italic text, lists, blockquotes, tables, fenced code blocks, horizontal rules, images, inline math, and display math.
+- Use heading order in sequence: #, then ##, then ###.
+- Keep blank lines between major blocks.
+- Keep tables simple and readable; avoid nested tables.
+- For math, use $...$ inline and $$...$$ for display equations.
+- Avoid raw HTML, footnotes, and plugin-specific Markdown extensions.
+- Keep line lengths reasonable for stable pagination.
 
-Author: Your Name  
+Goal:
+- Produce clear, printable Markdown that renders cleanly in MD2PDF.</code></pre>
+                            <p id="llmPromptCopyStatus" class="help-copy-status" role="status" aria-live="polite"></p>
+                        </div>
+                    </section>
+
+                    <section class="help-topic-page" data-topic="getting-started">
+                        <h3>Getting Started</h3>
+                        <ol>
+                            <li>Load one or more markdown files with <strong>Upload</strong>, or start typing immediately.</li>
+                            <li>Choose the active document in <strong>Open Files</strong> (left panel).</li>
+                            <li>Set <strong>Font</strong>, <strong>Margin</strong>, and <strong>Page size</strong> in the toolbar.</li>
+                            <li>Use preview controls: <strong>Fit Width</strong>, <strong>Fit Page</strong>, <strong>Zoom +/-</strong>.</li>
+                            <li>Click <strong>Export PDF</strong> and choose current file or all open files.</li>
+                        </ol>
+                        <p>Tip: keep <strong>Fit Width</strong> while editing, and switch to <strong>Fit Page</strong> for final visual QA.</p>
+                    </section>
+
+                    <section class="help-topic-page" data-topic="template">
+                        <h3>Full Markdown Template</h3>
+                        <pre><code># Project Document Title
+
+Author: Your Name
 Date: 2026-02-09
 
 ## 1. Executive Summary
@@ -269,11 +296,11 @@ $$
 ## 5. Conclusion
 Close with outcomes, risks, and next steps.
 </code></pre>
-                        </section>
+                    </section>
 
-                        <section class="help-section" id="help-formatting">
-                            <h3>Formatting Guide (High-Quality Markdown)</h3>
-                            <ul>
+                    <section class="help-topic-page" data-topic="formatting">
+                        <h3>Formatting Guide</h3>
+                        <ul>
                                 <li>Use heading levels in order: <code>#</code>, then <code>##</code>, then <code>###</code>.</li>
                                 <li>Leave a blank line between blocks (paragraphs, lists, tables, code).</li>
                                 <li>Prefer short paragraphs for cleaner pagination.</li>
@@ -289,11 +316,11 @@ Paragraph two with **bold** and *italic* text.
 
 Use `inline code` for command names and identifiers.
 </code></pre>
-                        </section>
+                    </section>
 
-                        <section class="help-section" id="help-tables-code">
-                            <h3>Tables, Code Blocks, and Escaping</h3>
-                            <p>Tables and fenced code blocks are treated as atomic blocks where possible for better page flow.</p>
+                    <section class="help-topic-page" data-topic="tables-code">
+                        <h3>Tables and Code</h3>
+                        <p>Tables and fenced code blocks are treated as atomic blocks where possible for better page flow.</p>
                             <pre><code>| Feature | Status | Notes |
 |:--------|:------:|------:|
 | Upload  |   OK   | Multi-file |
@@ -307,11 +334,11 @@ npm run dev
 To show backticks literally, wrap with double backticks:
 ``Use `code` inside text``
 </code></pre>
-                        </section>
+                    </section>
 
-                        <section class="help-section" id="help-math">
-                            <h3>Math and Matrices (KaTeX)</h3>
-                            <p>Use single dollars for inline math and double dollars for display math blocks.</p>
+                    <section class="help-topic-page" data-topic="math">
+                        <h3>Math and Matrices</h3>
+                        <p>Use single dollars for inline math and double dollars for display math blocks.</p>
                             <pre><code>Inline:
 The energy relation is $E = mc^2$.
 
@@ -345,51 +372,50 @@ x^2, & x \ge 0 \\
 \end{cases}
 $$
 </code></pre>
-                            <p>If a matrix appears wrong, check that row breaks use <code>\\</code> inside the math block.</p>
-                        </section>
+                        <p>If a matrix appears wrong, check that row breaks use <code>\\</code> inside the math block.</p>
+                    </section>
 
-                        <section class="help-section" id="help-navigation">
-                            <h3>Navigation and Focus Sync</h3>
-                            <ul>
+                    <section class="help-topic-page" data-topic="navigation">
+                        <h3>Navigation and Focus Sync</h3>
+                        <ul>
                                 <li>Click in markdown to focus the corresponding rendered block in preview.</li>
                                 <li>Click in preview to jump back to matching source lines in the editor.</li>
-                                <li>Repeated clicks in the same section suppress extra pulse animations when views are unchanged.</li>
-                                <li>Use pane dividers to optimize layout while reviewing dense content.</li>
-                            </ul>
-                        </section>
+                            <li>Repeated clicks in the same section suppress extra pulse animations when views are unchanged.</li>
+                            <li>Use pane dividers to optimize layout while reviewing dense content.</li>
+                        </ul>
+                    </section>
 
-                        <section class="help-section" id="help-pagination">
-                            <h3>Pagination Tips for Cleaner Pages</h3>
-                            <ul>
+                    <section class="help-topic-page" data-topic="pagination">
+                        <h3>Pagination Tips</h3>
+                        <ul>
                                 <li>Keep headings close to their first paragraph.</li>
                                 <li>Prefer one table per topic rather than very large tables.</li>
                                 <li>Break oversized code samples into logical chunks.</li>
                                 <li>Use sectioning with <code>##</code> and <code>###</code> to stabilize page flow.</li>
-                                <li>Use medium margins and 12px font for balanced readability and page density.</li>
-                            </ul>
-                        </section>
+                            <li>Use medium margins and 12px font for balanced readability and page density.</li>
+                        </ul>
+                    </section>
 
-                        <section class="help-section" id="help-export">
-                            <h3>Export Workflows</h3>
-                            <ul>
+                    <section class="help-topic-page" data-topic="export">
+                        <h3>Export Workflows</h3>
+                        <ul>
                                 <li><strong>Current file</strong>: generates one PDF using the active markdown filename.</li>
                                 <li><strong>All open files</strong>: generates one PDF per file and downloads a single ZIP.</li>
                                 <li>Export is headless (no browser print dialog).</li>
-                                <li>The progress panel shows completed count, active step, file timing, and total timing.</li>
-                            </ul>
-                        </section>
+                            <li>The progress panel shows completed count, active step, file timing, and total timing.</li>
+                        </ul>
+                    </section>
 
-                        <section class="help-section" id="help-troubleshooting">
-                            <h3>Troubleshooting Quick Fixes</h3>
-                            <ul>
+                    <section class="help-topic-page" data-topic="troubleshooting">
+                        <h3>Troubleshooting</h3>
+                        <ul>
                                 <li><strong>Blank preview:</strong> verify the file has content and valid markdown structure.</li>
                                 <li><strong>Math not rendering:</strong> ensure delimiters are correct and braces are balanced.</li>
                                 <li><strong>Unexpected page breaks:</strong> split long tables/code blocks into smaller sections.</li>
                                 <li><strong>Wrong export names:</strong> rename files in Open Files (affects downloads only).</li>
-                                <li><strong>Layout feels cramped:</strong> resize the sidebar and pane dividers to your workflow.</li>
-                            </ul>
-                        </section>
-                    </div>
+                            <li><strong>Layout feels cramped:</strong> resize the sidebar and pane dividers to your workflow.</li>
+                        </ul>
+                    </section>
                 </div>
             </div>
         </div>

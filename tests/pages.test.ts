@@ -205,4 +205,62 @@ describe('PageManager', () => {
     expect(latestLine8?.y).toBeCloseTo(213.333, 3)
     expect(nearestForLine2?.y).toBeCloseTo(213.333, 3)
   })
+
+  it('selects distributed exact matches when multiple entries cover the same source range', async () => {
+    const manager = await createReadyManager()
+    vi.mocked(typesetMarkdown).mockResolvedValueOnce(createTypesetResult([
+      {
+        sourceLineStart: 1,
+        sourceLineEnd: 3,
+        pageIndex: 0,
+        yStartPt: 60,
+        yEndPt: 90,
+      },
+      {
+        sourceLineStart: 1,
+        sourceLineEnd: 3,
+        pageIndex: 0,
+        yStartPt: 180,
+        yEndPt: 210,
+      },
+      {
+        sourceLineStart: 1,
+        sourceLineEnd: 3,
+        pageIndex: 0,
+        yStartPt: 300,
+        yEndPt: 330,
+      },
+    ]))
+
+    await manager.updateMarkdown('one\ntwo\nthree')
+
+    expect(manager.getCanvasYFromSourceLine(1)?.y).toBeCloseTo(80, 3)
+    expect(manager.getCanvasYFromSourceLine(2)?.y).toBeCloseTo(260, 3)
+    expect(manager.getCanvasYFromSourceLine(3)?.y).toBeCloseTo(440, 3)
+  })
+
+  it('prefers the most specific overlapping mapping when resolving canvas click to source line', async () => {
+    const manager = await createReadyManager()
+    vi.mocked(typesetMarkdown).mockResolvedValueOnce(createTypesetResult([
+      {
+        sourceLineStart: 1,
+        sourceLineEnd: 20,
+        pageIndex: 0,
+        yStartPt: 100,
+        yEndPt: 300,
+      },
+      {
+        sourceLineStart: 15,
+        sourceLineEnd: 15,
+        pageIndex: 0,
+        yStartPt: 180,
+        yEndPt: 200,
+      },
+    ]))
+
+    await manager.updateMarkdown('content')
+
+    const line = manager.getSourceLineFromCanvasY(253.333)
+    expect(line).toBe(15)
+  })
 })
