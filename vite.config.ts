@@ -17,10 +17,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      'canvadoc-typesetter': path.resolve(__dirname, 'packages/canvadoc-typesetter/dist/index.js'),
+      'canvadoc-typesetter': path.resolve(__dirname, 'src/canvadoc-typesetter/index.ts'),
     },
-  },
-  optimizeDeps: {
-    include: ['canvadoc-typesetter'],
   },
 });

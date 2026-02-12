@@ -1,5 +1,5 @@
 /**
- * Typesetter module - bridges the canvadoc-typesetter to the MD2PDF application.
+ * Typesetter module - bridges the integrated canvadoc-typesetter engine to the MD2PDF application.
  * This provides canvas-based rendering and client-side PDF export.
  */
 import {

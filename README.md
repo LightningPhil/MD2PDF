@@ -1,6 +1,6 @@
 # MD2PDF - Markdown to Paginated Preview
 
-A web app that loads/edits Markdown and renders it live as paginated paper-style pages with full math support, powered by [canvadoc-typesetter](packages/canvadoc-typesetter/).
+A web app that loads/edits Markdown and renders it live as paginated paper-style pages with full math support, powered by an integrated `canvadoc-typesetter` engine.
 
 ## Features
 
@@ -76,14 +76,14 @@ Outputs to `dist/` directory.
 
 ## Architecture
 
-MD2PDF uses **canvadoc-typesetter**, a deterministic markdown typesetter that renders identically to both HTML canvas and PDF:
+MD2PDF uses an integrated **canvadoc-typesetter** engine, a deterministic markdown typesetter that renders identically to both HTML canvas and PDF:
 
 - `src/main.ts` - App entry and orchestration
 - `src/editor.ts` - Editor behavior
 - `src/typesetter.ts` - Bridge to canvadoc-typesetter
+- `src/canvadoc-typesetter/` - Core markdown typesetting engine
 - `src/pages.ts` - Canvas-based page rendering
 - `src/ui.ts` - UI controls and interactions
-- `packages/canvadoc-typesetter/` - Markdown typesetting engine
 - `tests/` - Vitest test suite
 - `index.html` - HTML shell
 - `style.css` - Styling
