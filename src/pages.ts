@@ -25,11 +25,30 @@ export interface TypesetterConfig {
   emojiMode?: EmojiMode;
 }
 
+interface SourceLineBox {
+  lineNumber: number;
+  documentStartPt: number;
+  documentEndPt: number;
+  centerPt: number;
+  heightPt: number;
+  sourceSpanLines: number;
+}
+
+interface SourceLineCandidate {
+  documentStartPt: number;
+  documentEndPt: number;
+  spanLines: number;
+  sourceLineStart: number;
+  sourceLineEnd: number;
+}
+
 export class PageManager {
   private container: HTMLElement;
   private canvas: HTMLCanvasElement;
   private pages: PageLayout[] = [];
   private sourceMapping: SourceMappingEntry[] = [];
+  private sourceLineBoxes: SourceLineBox[] = [];
+  private sourceLineBoxByLine = new Map<number, SourceLineBox>();
   private pageSize: PageSizeKey = DEFAULT_PAGE_SIZE;
   private marginMm: number = DEFAULT_MARGIN_MM;
   private fontSizePx: number = DEFAULT_FONT_SIZE_PX;
@@ -275,6 +294,8 @@ export class PageManager {
       }
       this.pages = [];
       this.sourceMapping = [];
+      this.sourceLineBoxes = [];
+      this.sourceLineBoxByLine.clear();
       await this.renderCanvas(renderRevision);
       return;
     }
@@ -287,6 +308,7 @@ export class PageManager {
       }
       this.pages = result.pages;
       this.sourceMapping = result.sourceMapping ?? [];
+      this.rebuildSourceLineBoxes();
 
       if (result.diagnostics.errors.length > 0) {
         console.warn('Typeset errors:', result.diagnostics.errors);
@@ -349,77 +371,17 @@ export class PageManager {
    * Returns null if no mapping is found.
    */
   getSourceLineFromCanvasY(canvasY: number): number | null {
-    if (!Number.isFinite(canvasY) || this.sourceMapping.length === 0 || this.pages.length === 0) {
+    if (!Number.isFinite(canvasY) || this.pages.length === 0 || this.sourceLineBoxes.length === 0) {
       return null;
     }
 
-    // Convert unscaled canvas Y (in CSS pixels) to points.
-    const ptPerPx = 72 / 96;
-    const pageGapPt = PAGE_GAP_PX * ptPerPx;
-    const yPt = Math.max(0, canvasY) * ptPerPx;
-
-    // Find which page and y-position this corresponds to
-    let cumulativeYPt = 0;
-    let targetPageIndex = 0;
-    let yOnPagePt = yPt;
-
-    for (let i = 0; i < this.pages.length; i++) {
-      const pageHeightPt = this.pages[i].heightPt;
-      const pageEndPt = cumulativeYPt + pageHeightPt;
-      
-      if (yPt <= pageEndPt) {
-        targetPageIndex = i;
-        yOnPagePt = yPt - cumulativeYPt;
-        break;
-      }
-      
-      cumulativeYPt = pageEndPt + pageGapPt;
-      targetPageIndex = i + 1;
-    }
-
-    // Handle click beyond last page
-    if (targetPageIndex >= this.pages.length) {
-      targetPageIndex = this.pages.length - 1;
-      yOnPagePt = this.pages[targetPageIndex].heightPt;
-    }
-
-    // Find the best matching source mapping entry
-    const containingEntries: SourceMappingEntry[] = [];
-    let bestEntry: SourceMappingEntry | null = null;
-    let bestDistance = Infinity;
-
-    for (const entry of this.sourceMapping) {
-      if (entry.pageIndex !== targetPageIndex) {
-        continue;
-      }
-
-      // Track overlapping entries first; they can happen when one mapping block covers
-      // a broad source range and nested blocks add more specific ranges.
-      if (yOnPagePt >= entry.yStartPt && yOnPagePt <= entry.yEndPt) {
-        containingEntries.push(entry);
-        continue;
-      }
-
-      // Track closest block.
-      const distance = yOnPagePt < entry.yStartPt
-        ? entry.yStartPt - yOnPagePt
-        : yOnPagePt - entry.yEndPt;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestEntry = entry;
-      }
-    }
-
-    if (containingEntries.length > 0) {
-      const selectedEntry = this.selectBestEntryForCanvasY(containingEntries, yOnPagePt);
-      return this.estimateSourceLineForEntryAtY(selectedEntry, yOnPagePt);
-    }
-
-    if (!bestEntry) {
+    const locatedPosition = this.locateCanvasPosition(canvasY);
+    if (!locatedPosition) {
       return null;
     }
-
-    return this.estimateSourceLineForEntryAtY(bestEntry, yOnPagePt);
+    const { pageIndex, yOnPagePt } = locatedPosition;
+    const documentYPt = this.getPageDocumentOffsetPt(pageIndex) + yOnPagePt;
+    return this.findNearestLineBoxByDocumentY(documentYPt)?.lineNumber ?? null;
   }
 
   /**
@@ -427,56 +389,19 @@ export class PageManager {
    * Returns null if no mapping is found.
    */
   getCanvasYFromSourceLine(lineNumber: number): { y: number; height: number } | null {
-    if (!Number.isFinite(lineNumber) || this.sourceMapping.length === 0 || this.pages.length === 0) {
+    if (!Number.isFinite(lineNumber) || this.pages.length === 0 || this.sourceLineBoxes.length === 0) {
       return null;
     }
 
-    // Find the mapping entry that contains this line
-    const exactEntries: SourceMappingEntry[] = [];
-    let bestEntry: SourceMappingEntry | null = null;
-    let bestDistance = Infinity;
-
-    for (const entry of this.sourceMapping) {
-      if (lineNumber >= entry.sourceLineStart && lineNumber <= entry.sourceLineEnd) {
-        exactEntries.push(entry);
-        continue;
-      }
-
-      // Track closest if no exact match
-      const distance = lineNumber < entry.sourceLineStart
-        ? entry.sourceLineStart - lineNumber
-        : lineNumber - entry.sourceLineEnd;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestEntry = entry;
-      }
-    }
-
-    if (exactEntries.length > 0) {
-      bestEntry = this.selectBestEntryForSourceLine(exactEntries, lineNumber);
-    }
-
-    if (!bestEntry) {
-      return null;
-    }
-
-    // Calculate the Y position in canvas coordinates
     const ptPerPx = 72 / 96;
-    const pageGapPt = PAGE_GAP_PX * ptPerPx;
-
-    // Get cumulative Y to the start of the target page
-    let cumulativeYPt = 0;
-    for (let i = 0; i < bestEntry.pageIndex && i < this.pages.length; i++) {
-      cumulativeYPt += this.pages[i].heightPt + pageGapPt;
+    const lineBox = this.resolveLineBox(Math.max(1, Math.floor(lineNumber)));
+    if (!lineBox) {
+      return null;
     }
 
-    const entryCanvasPosition = this.getEntryCanvasPositionForLine(bestEntry, lineNumber);
-    const yPt = cumulativeYPt + entryCanvasPosition.yPt;
-
-    // Convert to unscaled CSS pixels.
     return {
-      y: yPt / ptPerPx,
-      height: entryCanvasPosition.heightPt / ptPerPx,
+      y: lineBox.documentStartPt / ptPerPx,
+      height: Math.max(1, lineBox.heightPt) / ptPerPx,
     };
   }
 
@@ -487,120 +412,378 @@ export class PageManager {
     return this.sourceMapping;
   }
 
-  private estimateSourceLineForEntryAtY(entry: SourceMappingEntry, yOnPagePt: number): number {
-    const startLine = entry.sourceLineStart;
-    const endLine = Math.max(startLine, entry.sourceLineEnd);
-    if (endLine === startLine) {
-      return startLine;
+  private rebuildSourceLineBoxes(): void {
+    this.sourceLineBoxes = [];
+    this.sourceLineBoxByLine.clear();
+
+    if (this.sourceMapping.length === 0 || this.pages.length === 0) {
+      return;
     }
 
-    const heightPt = entry.yEndPt - entry.yStartPt;
-    if (heightPt <= 0) {
-      return startLine;
+    const sourceLineCount = this.getSourceLineCount();
+    if (!Number.isFinite(sourceLineCount) || sourceLineCount < 1) {
+      return;
     }
 
-    const clampedY = this.clamp(yOnPagePt, entry.yStartPt, entry.yEndPt);
-    const normalizedY = (clampedY - entry.yStartPt) / heightPt;
-    const lineCount = (endLine - startLine) + 1;
-    const lineOffset = Math.min(lineCount - 1, Math.floor(normalizedY * lineCount));
-    return startLine + lineOffset;
+    const pageOffsetsPt = this.getPageOffsetsPt();
+    const totalDocumentHeightPt = Math.max(
+      1,
+      (pageOffsetsPt[this.pages.length - 1] ?? 0) + Math.max(1, this.pages[this.pages.length - 1]?.heightPt ?? 1),
+    );
+
+    const candidatesByLine = this.collectSourceLineCandidates(sourceLineCount, pageOffsetsPt);
+    const selectedByLine: Array<SourceLineCandidate | null> = new Array(sourceLineCount + 1).fill(null);
+    const rawCentersPt: number[] = new Array(sourceLineCount + 1).fill(0);
+    const rawHeightsPt: number[] = new Array(sourceLineCount + 1).fill(12);
+    const rawSpanLines: number[] = new Array(sourceLineCount + 1).fill(Number.POSITIVE_INFINITY);
+    const mappedLines: number[] = [];
+
+    for (let lineNumber = 1; lineNumber <= sourceLineCount; lineNumber += 1) {
+      const selected = this.selectBestCandidate(candidatesByLine[lineNumber], lineNumber);
+      if (!selected) {
+        continue;
+      }
+
+      selectedByLine[lineNumber] = selected;
+      mappedLines.push(lineNumber);
+      rawCentersPt[lineNumber] = (selected.documentStartPt + selected.documentEndPt) * 0.5;
+      rawHeightsPt[lineNumber] = Math.max(0.25, selected.documentEndPt - selected.documentStartPt);
+      rawSpanLines[lineNumber] = selected.spanLines;
+    }
+
+    const defaultHeightPt = Math.max(0.25, this.getMedian(mappedLines.map((line) => rawHeightsPt[line])) ?? 12);
+
+    const previousMappedLine: number[] = new Array(sourceLineCount + 1).fill(0);
+    const nextMappedLine: number[] = new Array(sourceLineCount + 2).fill(0);
+
+    let previousMapped = 0;
+    for (let lineNumber = 1; lineNumber <= sourceLineCount; lineNumber += 1) {
+      if (selectedByLine[lineNumber]) {
+        previousMapped = lineNumber;
+      }
+      previousMappedLine[lineNumber] = previousMapped;
+    }
+
+    let nextMapped = 0;
+    for (let lineNumber = sourceLineCount; lineNumber >= 1; lineNumber -= 1) {
+      if (selectedByLine[lineNumber]) {
+        nextMapped = lineNumber;
+      }
+      nextMappedLine[lineNumber] = nextMapped;
+    }
+
+    for (let lineNumber = 1; lineNumber <= sourceLineCount; lineNumber += 1) {
+      if (selectedByLine[lineNumber]) {
+        continue;
+      }
+
+      const previousLine = previousMappedLine[lineNumber];
+      const nextLine = nextMappedLine[lineNumber];
+
+      if (previousLine > 0 && nextLine > 0 && previousLine !== nextLine) {
+        const ratio = (lineNumber - previousLine) / (nextLine - previousLine);
+        rawCentersPt[lineNumber] = rawCentersPt[previousLine] + (rawCentersPt[nextLine] - rawCentersPt[previousLine]) * ratio;
+        rawHeightsPt[lineNumber] = rawHeightsPt[previousLine] + (rawHeightsPt[nextLine] - rawHeightsPt[previousLine]) * ratio;
+        rawSpanLines[lineNumber] = Math.max(rawSpanLines[previousLine], rawSpanLines[nextLine]);
+        continue;
+      }
+
+      if (previousLine > 0 && nextLine === 0) {
+        rawCentersPt[lineNumber] = rawCentersPt[previousLine];
+        rawHeightsPt[lineNumber] = rawHeightsPt[previousLine];
+        rawSpanLines[lineNumber] = rawSpanLines[previousLine];
+        continue;
+      }
+
+      if (nextLine > 0 && previousLine === 0) {
+        rawCentersPt[lineNumber] = rawCentersPt[nextLine];
+        rawHeightsPt[lineNumber] = rawHeightsPt[nextLine];
+        rawSpanLines[lineNumber] = rawSpanLines[nextLine];
+        continue;
+      }
+
+      rawCentersPt[lineNumber] = defaultHeightPt * (lineNumber - 0.5);
+      rawHeightsPt[lineNumber] = defaultHeightPt;
+      rawSpanLines[lineNumber] = Number.POSITIVE_INFINITY;
+    }
+
+    for (let lineNumber = 1; lineNumber <= sourceLineCount; lineNumber += 1) {
+      const heightPt = Math.max(0.25, rawHeightsPt[lineNumber] || defaultHeightPt);
+      let centerPt = rawCentersPt[lineNumber];
+
+      if (!Number.isFinite(centerPt)) {
+        centerPt = heightPt * 0.5;
+      }
+
+      const halfHeightPt = heightPt * 0.5;
+      const maxCenterPt = Math.max(halfHeightPt, totalDocumentHeightPt - halfHeightPt);
+      centerPt = this.clamp(centerPt, halfHeightPt, maxCenterPt);
+
+      const documentStartPt = this.clamp(centerPt - halfHeightPt, 0, totalDocumentHeightPt);
+      let documentEndPt = this.clamp(centerPt + halfHeightPt, documentStartPt, totalDocumentHeightPt);
+      if (documentEndPt <= documentStartPt) {
+        documentEndPt = documentStartPt + 0.25;
+      }
+      const finalHeightPt = Math.max(0.25, documentEndPt - documentStartPt);
+      const finalCenterPt = documentStartPt + (finalHeightPt * 0.5);
+
+      const lineBox: SourceLineBox = {
+        lineNumber,
+        documentStartPt,
+        documentEndPt,
+        centerPt: finalCenterPt,
+        heightPt: finalHeightPt,
+        sourceSpanLines: rawSpanLines[lineNumber],
+      };
+      this.sourceLineBoxes.push(lineBox);
+      this.sourceLineBoxByLine.set(lineNumber, lineBox);
+    }
   }
 
-  private selectBestEntryForCanvasY(
-    entries: readonly SourceMappingEntry[],
-    yOnPagePt: number,
-  ): SourceMappingEntry {
-    let bestEntry = entries[0];
-    let bestRangeSpan = this.getSourceLineSpan(bestEntry);
-    let bestCenterDistance = Math.abs(this.getEntryCenterYPt(bestEntry) - yOnPagePt);
+  private getSourceLineCount(): number {
+    const mappedLineCount = this.sourceMapping.reduce(
+      (maxValue, entry) => Math.max(maxValue, Math.floor(entry.sourceLineEnd)),
+      0,
+    );
+    const normalizedMarkdown = this.currentMarkdown
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+    const markdownLineCount = normalizedMarkdown.length > 0
+      ? normalizedMarkdown.split('\n').length
+      : 0;
+    return Math.max(mappedLineCount, markdownLineCount);
+  }
 
-    for (let i = 1; i < entries.length; i += 1) {
-      const candidate = entries[i];
-      const candidateRangeSpan = this.getSourceLineSpan(candidate);
-      const candidateCenterDistance = Math.abs(this.getEntryCenterYPt(candidate) - yOnPagePt);
-      if (
-        candidateRangeSpan < bestRangeSpan ||
-        (candidateRangeSpan === bestRangeSpan && candidateCenterDistance < bestCenterDistance)
-      ) {
-        bestEntry = candidate;
-        bestRangeSpan = candidateRangeSpan;
-        bestCenterDistance = candidateCenterDistance;
+  private collectSourceLineCandidates(
+    sourceLineCount: number,
+    pageOffsetsPt: readonly number[],
+  ): SourceLineCandidate[][] {
+    const candidatesByLine = Array.from({ length: sourceLineCount + 1 }, () => [] as SourceLineCandidate[]);
+    for (const entry of this.sourceMapping) {
+      const safePageIndex = this.clamp(
+        Math.floor(entry.pageIndex),
+        0,
+        this.pages.length - 1,
+      );
+      const pageHeightPt = Math.max(1, this.pages[safePageIndex]?.heightPt ?? 1);
+      const pageOffsetPt = pageOffsetsPt[safePageIndex] ?? this.getPageDocumentOffsetPt(safePageIndex);
+      const entryYStartPt = this.clamp(Math.min(entry.yStartPt, entry.yEndPt), 0, pageHeightPt);
+      const entryYEndPt = this.clamp(Math.max(entry.yStartPt, entry.yEndPt), entryYStartPt, pageHeightPt);
+
+      const safeLineStart = this.clamp(Math.floor(entry.sourceLineStart), 1, sourceLineCount);
+      const safeLineEnd = this.clamp(
+        Math.floor(entry.sourceLineEnd),
+        safeLineStart,
+        sourceLineCount,
+      );
+      const spanLineCount = Math.max(1, (safeLineEnd - safeLineStart) + 1);
+      const entryHeightPt = Math.max(0.25, entryYEndPt - entryYStartPt);
+      const perLineHeightPt = entryHeightPt / spanLineCount;
+
+      for (let lineNumber = safeLineStart; lineNumber <= safeLineEnd; lineNumber += 1) {
+        const lineOffset = lineNumber - safeLineStart;
+        const yStartPt = entryYStartPt + (lineOffset * perLineHeightPt);
+        const yEndPt = lineNumber === safeLineEnd
+          ? entryYEndPt
+          : yStartPt + perLineHeightPt;
+        const documentStartPt = pageOffsetPt + yStartPt;
+        const documentEndPt = pageOffsetPt + Math.max(yStartPt + 0.25, yEndPt);
+        candidatesByLine[lineNumber].push({
+          documentStartPt,
+          documentEndPt,
+          spanLines: spanLineCount,
+          sourceLineStart: safeLineStart,
+          sourceLineEnd: safeLineEnd,
+        });
       }
     }
 
-    return bestEntry;
+    return candidatesByLine;
   }
 
-  private selectBestEntryForSourceLine(
-    entries: readonly SourceMappingEntry[],
+  private selectBestCandidate(
+    candidates: readonly SourceLineCandidate[] | undefined,
     lineNumber: number,
-  ): SourceMappingEntry {
-    if (entries.length === 1) {
-      return entries[0];
+  ): SourceLineCandidate | null {
+    if (!candidates || candidates.length === 0) {
+      return null;
+    }
+    if (candidates.length === 1) {
+      return candidates[0];
     }
 
-    const smallestRangeSpan = entries.reduce(
-      (smallest, entry) => Math.min(smallest, this.getSourceLineSpan(entry)),
+    const smallestSpan = candidates.reduce(
+      (smallest, candidate) => Math.min(smallest, candidate.spanLines),
       Number.POSITIVE_INFINITY,
     );
-    const mostSpecificEntries = entries
-      .filter((entry) => this.getSourceLineSpan(entry) === smallestRangeSpan)
-      .slice()
-      .sort((a, b) => {
-        if (a.pageIndex !== b.pageIndex) {
-          return a.pageIndex - b.pageIndex;
-        }
-        return a.yStartPt - b.yStartPt;
-      });
 
-    if (mostSpecificEntries.length === 1) {
-      return mostSpecificEntries[0];
+    const mostSpecificCandidates = candidates.filter((candidate) => candidate.spanLines === smallestSpan);
+    if (mostSpecificCandidates.length === 1) {
+      return mostSpecificCandidates[0];
     }
 
-    const minLine = mostSpecificEntries.reduce(
-      (minValue, entry) => Math.min(minValue, entry.sourceLineStart),
+    const minSourceLine = mostSpecificCandidates.reduce(
+      (minValue, candidate) => Math.min(minValue, candidate.sourceLineStart),
       Number.POSITIVE_INFINITY,
     );
-    const maxLine = mostSpecificEntries.reduce(
-      (maxValue, entry) => Math.max(maxValue, entry.sourceLineEnd),
+    const maxSourceLine = mostSpecificCandidates.reduce(
+      (maxValue, candidate) => Math.max(maxValue, candidate.sourceLineEnd),
       Number.NEGATIVE_INFINITY,
     );
-    const span = Math.max(1, maxLine - minLine);
-    const clampedLine = this.clamp(Math.floor(lineNumber), minLine, maxLine);
-    const normalized = (clampedLine - minLine) / span;
-    const selectedIndex = Math.round(normalized * (mostSpecificEntries.length - 1));
-    return mostSpecificEntries[this.clamp(selectedIndex, 0, mostSpecificEntries.length - 1)];
+    const sourceSpan = Math.max(1, maxSourceLine - minSourceLine);
+    const clampedLine = this.clamp(Math.floor(lineNumber), minSourceLine, maxSourceLine);
+    const normalized = (clampedLine - minSourceLine) / sourceSpan;
+    const orderedByY = mostSpecificCandidates
+      .slice()
+      .sort((a, b) => a.documentStartPt - b.documentStartPt);
+    const selectedIndex = Math.round(normalized * (orderedByY.length - 1));
+    return orderedByY[this.clamp(selectedIndex, 0, orderedByY.length - 1)];
   }
 
-  private getSourceLineSpan(entry: SourceMappingEntry): number {
-    return Math.max(0, entry.sourceLineEnd - entry.sourceLineStart);
-  }
-
-  private getEntryCenterYPt(entry: SourceMappingEntry): number {
-    return (entry.yStartPt + entry.yEndPt) / 2;
-  }
-
-  private getEntryCanvasPositionForLine(
-    entry: SourceMappingEntry,
-    lineNumber: number,
-  ): { yPt: number; heightPt: number } {
-    const startLine = entry.sourceLineStart;
-    const endLine = Math.max(startLine, entry.sourceLineEnd);
-    const blockHeightPt = Math.max(1, entry.yEndPt - entry.yStartPt);
-
-    if (endLine === startLine) {
-      return {
-        yPt: entry.yStartPt,
-        heightPt: blockHeightPt,
-      };
+  private resolveLineBox(lineNumber: number): SourceLineBox | null {
+    if (this.sourceLineBoxes.length === 0) {
+      return null;
     }
 
-    const clampedLine = this.clamp(Math.floor(lineNumber), startLine, endLine);
-    const normalizedLine = (clampedLine - startLine) / (endLine - startLine);
+    const clampedLine = this.clamp(
+      Math.floor(lineNumber),
+      1,
+      this.sourceLineBoxes.length,
+    );
+    return this.sourceLineBoxByLine.get(clampedLine) ?? this.sourceLineBoxes[clampedLine - 1] ?? null;
+  }
+
+  private findNearestLineBoxByDocumentY(documentYPt: number): SourceLineBox | null {
+    if (this.sourceLineBoxes.length === 0) {
+      return null;
+    }
+
+    let bestLineBox: SourceLineBox | null = null;
+    let bestDistancePt = Number.POSITIVE_INFINITY;
+    let bestSpanLines = Number.POSITIVE_INFINITY;
+    let bestCenterDistancePt = Number.POSITIVE_INFINITY;
+
+    for (const lineBox of this.sourceLineBoxes) {
+      const distancePt = documentYPt < lineBox.documentStartPt
+        ? lineBox.documentStartPt - documentYPt
+        : documentYPt > lineBox.documentEndPt
+          ? documentYPt - lineBox.documentEndPt
+          : 0;
+      const centerDistancePt = Math.abs(documentYPt - lineBox.centerPt);
+
+      if (distancePt < bestDistancePt) {
+        bestLineBox = lineBox;
+        bestDistancePt = distancePt;
+        bestSpanLines = lineBox.sourceSpanLines;
+        bestCenterDistancePt = centerDistancePt;
+        continue;
+      }
+
+      if (distancePt === bestDistancePt) {
+        if (lineBox.sourceSpanLines < bestSpanLines) {
+          bestLineBox = lineBox;
+          bestSpanLines = lineBox.sourceSpanLines;
+          bestCenterDistancePt = centerDistancePt;
+          continue;
+        }
+        if (lineBox.sourceSpanLines === bestSpanLines && centerDistancePt < bestCenterDistancePt) {
+          bestLineBox = lineBox;
+          bestCenterDistancePt = centerDistancePt;
+        }
+      }
+    }
+
+    return bestLineBox;
+  }
+
+  private getMedian(values: readonly number[]): number | null {
+    const finiteValues = values
+      .filter((value) => Number.isFinite(value))
+      .slice()
+      .sort((a, b) => a - b);
+    if (finiteValues.length === 0) {
+      return null;
+    }
+    const middle = Math.floor(finiteValues.length / 2);
+    if (finiteValues.length % 2 === 0) {
+      return (finiteValues[middle - 1] + finiteValues[middle]) * 0.5;
+    }
+    return finiteValues[middle];
+  }
+
+  private getPageOffsetsPt(): number[] {
+    const ptPerPx = 72 / 96;
+    const pageGapPt = PAGE_GAP_PX * ptPerPx;
+    const offsets: number[] = [];
+    let runningOffsetPt = 0;
+    for (let pageIndex = 0; pageIndex < this.pages.length; pageIndex += 1) {
+      offsets.push(runningOffsetPt);
+      runningOffsetPt += this.pages[pageIndex].heightPt + pageGapPt;
+    }
+    return offsets;
+  }
+
+  private locateCanvasPosition(canvasY: number): { pageIndex: number; yOnPagePt: number } | null {
+    if (this.pages.length === 0 || !Number.isFinite(canvasY)) {
+      return null;
+    }
+
+    const ptPerPx = 72 / 96;
+    const pageGapPt = PAGE_GAP_PX * ptPerPx;
+    const yPt = Math.max(0, canvasY) * ptPerPx;
+
+    let pageStartPt = 0;
+    for (let pageIndex = 0; pageIndex < this.pages.length; pageIndex += 1) {
+      const pageHeightPt = this.pages[pageIndex].heightPt;
+      const pageEndPt = pageStartPt + pageHeightPt;
+      if (yPt <= pageEndPt) {
+        return {
+          pageIndex,
+          yOnPagePt: this.clamp(yPt - pageStartPt, 0, pageHeightPt),
+        };
+      }
+
+      const isLastPage = pageIndex === this.pages.length - 1;
+      const nextPageStartPt = pageEndPt + pageGapPt;
+      if (isLastPage) {
+        break;
+      }
+
+      if (yPt <= nextPageStartPt) {
+        const distanceToCurrentPage = yPt - pageEndPt;
+        const distanceToNextPage = nextPageStartPt - yPt;
+        if (distanceToCurrentPage <= distanceToNextPage) {
+          return {
+            pageIndex,
+            yOnPagePt: pageHeightPt,
+          };
+        }
+        return {
+          pageIndex: pageIndex + 1,
+          yOnPagePt: 0,
+        };
+      }
+
+      pageStartPt = nextPageStartPt;
+    }
+
+    const lastPageIndex = this.pages.length - 1;
     return {
-      yPt: entry.yStartPt + (blockHeightPt * normalizedLine),
-      heightPt: Math.max(1, blockHeightPt / ((endLine - startLine) + 1)),
+      pageIndex: lastPageIndex,
+      yOnPagePt: this.pages[lastPageIndex].heightPt,
     };
+  }
+
+  private getPageDocumentOffsetPt(pageIndex: number): number {
+    const ptPerPx = 72 / 96;
+    const pageGapPt = PAGE_GAP_PX * ptPerPx;
+    let offsetPt = 0;
+
+    for (let i = 0; i < pageIndex && i < this.pages.length; i += 1) {
+      offsetPt += this.pages[i].heightPt + pageGapPt;
+    }
+
+    return offsetPt;
   }
 
   private clamp(value: number, min: number, max: number): number {

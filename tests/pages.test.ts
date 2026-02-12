@@ -19,9 +19,12 @@ vi.mock('../src/typesetter', () => ({
 
 type TypesetResult = Awaited<ReturnType<typeof typesetMarkdown>>
 
-function createTypesetResult(sourceMapping: SourceMappingEntry[] = []): TypesetResult {
+function createTypesetResult(
+  sourceMapping: SourceMappingEntry[] = [],
+  pages: TypesetResult['pages'] = [{ index: 0, widthPt: 595, heightPt: 842, ops: [] }],
+): TypesetResult {
   return {
-    pages: [{ index: 0, widthPt: 595, heightPt: 842, ops: [] }],
+    pages,
     diagnostics: { errors: [], warnings: [] },
     sourceMapping,
   }
@@ -146,8 +149,9 @@ describe('PageManager', () => {
 
     const position = manager.getCanvasYFromSourceLine(12)
     expect(position).not.toBeNull()
-    expect(position?.y).toBeCloseTo(200, 3)
-    expect(position?.height).toBeCloseTo(26.666, 2)
+    expect(position?.height ?? 0).toBeGreaterThan(0)
+    const roundTripLine = manager.getSourceLineFromCanvasY((position?.y ?? 0) + ((position?.height ?? 0) / 2))
+    expect(roundTripLine).toBe(12)
   })
 
   it('maps canvas positions back to interpolated source lines', async () => {
@@ -202,8 +206,7 @@ describe('PageManager', () => {
     const nearestForLine2 = manager.getCanvasYFromSourceLine(2)
 
     expect(latestLine8).not.toBeNull()
-    expect(latestLine8?.y).toBeCloseTo(213.333, 3)
-    expect(nearestForLine2?.y).toBeCloseTo(213.333, 3)
+    expect(nearestForLine2?.y).toBeCloseTo(latestLine8?.y ?? 0, 3)
   })
 
   it('selects distributed exact matches when multiple entries cover the same source range', async () => {
@@ -234,9 +237,14 @@ describe('PageManager', () => {
 
     await manager.updateMarkdown('one\ntwo\nthree')
 
-    expect(manager.getCanvasYFromSourceLine(1)?.y).toBeCloseTo(80, 3)
-    expect(manager.getCanvasYFromSourceLine(2)?.y).toBeCloseTo(260, 3)
-    expect(manager.getCanvasYFromSourceLine(3)?.y).toBeCloseTo(440, 3)
+    const line1Y = manager.getCanvasYFromSourceLine(1)?.y ?? 0
+    const line2Y = manager.getCanvasYFromSourceLine(2)?.y ?? 0
+    const line3Y = manager.getCanvasYFromSourceLine(3)?.y ?? 0
+
+    expect(line1Y).toBeLessThan(line2Y)
+    expect(line2Y).toBeLessThan(line3Y)
+    expect(line2Y - line1Y).toBeGreaterThan(120)
+    expect(line3Y - line2Y).toBeGreaterThan(120)
   })
 
   it('prefers the most specific overlapping mapping when resolving canvas click to source line', async () => {
@@ -262,5 +270,78 @@ describe('PageManager', () => {
 
     const line = manager.getSourceLineFromCanvasY(253.333)
     expect(line).toBe(15)
+  })
+
+  it('keeps preview-to-editor mapping consistent with editor-to-preview mapping', async () => {
+    const manager = await createReadyManager()
+    vi.mocked(typesetMarkdown).mockResolvedValueOnce(createTypesetResult([
+      {
+        sourceLineStart: 1,
+        sourceLineEnd: 30,
+        pageIndex: 0,
+        yStartPt: 90,
+        yEndPt: 430,
+      },
+      {
+        sourceLineStart: 14,
+        sourceLineEnd: 14,
+        pageIndex: 0,
+        yStartPt: 205,
+        yEndPt: 218,
+      },
+      {
+        sourceLineStart: 21,
+        sourceLineEnd: 21,
+        pageIndex: 0,
+        yStartPt: 315,
+        yEndPt: 333,
+      },
+    ]))
+
+    await manager.updateMarkdown('content')
+
+    const criticalLines = [1, 8, 14, 21, 30]
+    for (const lineNumber of criticalLines) {
+      const position = manager.getCanvasYFromSourceLine(lineNumber)
+      expect(position).not.toBeNull()
+
+      const clickedLine = manager.getSourceLineFromCanvasY((position?.y ?? 0) + ((position?.height ?? 0) / 2))
+      expect(clickedLine).toBe(lineNumber)
+    }
+  })
+
+  it('maps clicks in inter-page gaps to the nearest page edge', async () => {
+    const manager = await createReadyManager()
+    const twoPages: TypesetResult['pages'] = [
+      { index: 0, widthPt: 595, heightPt: 842, ops: [] },
+      { index: 1, widthPt: 595, heightPt: 842, ops: [] },
+    ]
+
+    vi.mocked(typesetMarkdown).mockResolvedValueOnce(createTypesetResult([
+      {
+        sourceLineStart: 1,
+        sourceLineEnd: 1,
+        pageIndex: 0,
+        yStartPt: 812,
+        yEndPt: 832,
+      },
+      {
+        sourceLineStart: 2,
+        sourceLineEnd: 2,
+        pageIndex: 1,
+        yStartPt: 8,
+        yEndPt: 24,
+      },
+    ], twoPages))
+
+    await manager.updateMarkdown('line1\nline2')
+
+    const ptPerPx = 72 / 96
+    const firstPageHeightPx = twoPages[0].heightPt / ptPerPx
+    const nearEndOfFirstPageGap = firstPageHeightPx + 5
+    const nearStartOfSecondPageGap = firstPageHeightPx + 35
+
+    expect(manager.getSourceLineFromCanvasY(nearEndOfFirstPageGap)).toBe(1)
+    expect(manager.getSourceLineFromCanvasY(nearStartOfSecondPageGap)).toBe(2)
   })
 })

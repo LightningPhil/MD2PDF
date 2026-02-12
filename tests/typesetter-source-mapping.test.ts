@@ -170,4 +170,56 @@ describe('typesetter source-mapping compatibility', () => {
     expect(result.sourceMapping).toHaveLength(5);
     expect(result.sourceMapping?.[0].yStartPt ?? 0).toBeLessThan(result.sourceMapping?.[4].yStartPt ?? 0);
   });
+
+  it('fills coverage gaps when source-span mapping is partial', async () => {
+    typesetMock.mockResolvedValueOnce({
+      pages: [createPageWithOps([
+        {
+          kind: 'glyphRun',
+          fontId: 'text',
+          fontSizePt: 12,
+          xPt: 40,
+          yBaselinePt: 100,
+          text: 'Line one',
+          xOffsetsPt: [0],
+          sourceSpan: { start: 0, end: 8, kind: 'markdown' },
+        },
+        {
+          kind: 'glyphRun',
+          fontId: 'text',
+          fontSizePt: 12,
+          xPt: 40,
+          yBaselinePt: 140,
+          text: 'Line two',
+          xOffsetsPt: [0],
+        },
+        {
+          kind: 'glyphRun',
+          fontId: 'text',
+          fontSizePt: 12,
+          xPt: 40,
+          yBaselinePt: 180,
+          text: 'Line three',
+          xOffsetsPt: [0],
+        },
+        {
+          kind: 'glyphRun',
+          fontId: 'text',
+          fontSizePt: 12,
+          xPt: 40,
+          yBaselinePt: 220,
+          text: 'Line four',
+          xOffsetsPt: [0],
+        },
+      ])],
+      diagnostics: { warnings: [], errors: [] },
+    });
+
+    const { typesetMarkdown } = await import('../src/typesetter');
+    const result = await typesetMarkdown('Line one\nLine two\nLine three\nLine four', baseConfig);
+
+    expect(result.sourceMapping).toHaveLength(4);
+    const mappedLines = (result.sourceMapping ?? []).map((entry) => entry.sourceLineStart);
+    expect(mappedLines).toEqual([1, 2, 3, 4]);
+  });
 });

@@ -205,10 +205,16 @@ export async function typesetMarkdown(
 ): Promise<{ pages: PageLayout[]; diagnostics: { warnings: string[]; errors: string[] }; sourceMapping?: SourceMappingEntry[] }> {
   const typesetter = await getTypesetter(config);
   const result = await typesetter.typeset(markdown) as TypesetResultWithOptionalSourceMapping;
-  const sourceMapping =
-    normalizeSourceMapping(result.sourceMapping) ??
-    deriveSourceMappingFromSourceSpans(markdown, result.pages) ??
-    deriveSourceMappingFromRenderedLines(markdown, result.pages);
+  const providedSourceMapping = normalizeSourceMapping(result.sourceMapping);
+  const sourceSpanMapping = deriveSourceMappingFromSourceSpans(markdown, result.pages);
+  const renderedLineMapping = deriveSourceMappingFromRenderedLines(markdown, result.pages);
+  const sourceMapping = resolveBestSourceMapping(
+    markdown,
+    result.pages,
+    providedSourceMapping,
+    sourceSpanMapping,
+    renderedLineMapping,
+  );
 
   return {
     pages: result.pages,
@@ -372,12 +378,255 @@ function normalizeSourceMapping(candidate: unknown): SourceMappingEntry[] | null
   return normalized;
 }
 
+function resolveBestSourceMapping(
+  markdown: string,
+  pages: readonly PageLayout[],
+  provided: SourceMappingEntry[] | null,
+  sourceSpanDerived: SourceMappingEntry[] | null,
+  renderedDerived: SourceMappingEntry[],
+): SourceMappingEntry[] | undefined {
+  if (provided && provided.length > 0) {
+    return provided;
+  }
+
+  if (sourceSpanDerived && sourceSpanDerived.length > 0) {
+    const enriched = enrichSourceMappingCoverage(
+      markdown,
+      pages,
+      sourceSpanDerived,
+      renderedDerived,
+    );
+    if (enriched.length > 0) {
+      return enriched;
+    }
+    return sourceSpanDerived;
+  }
+
+  if (renderedDerived.length > 0) {
+    return renderedDerived;
+  }
+
+  return undefined;
+}
+
+function enrichSourceMappingCoverage(
+  markdown: string,
+  pages: readonly PageLayout[],
+  primary: readonly SourceMappingEntry[],
+  fallback: readonly SourceMappingEntry[],
+): SourceMappingEntry[] {
+  if (primary.length === 0) {
+    return fallback.slice();
+  }
+
+  const sourceLineCount = getSourceLineCount(markdown);
+  if (sourceLineCount <= 0) {
+    return primary.slice();
+  }
+
+  if (fallback.length === 0) {
+    return primary.slice();
+  }
+
+  if (isSourceMappingCoverageComplete(primary, sourceLineCount)) {
+    return primary.slice();
+  }
+
+  const perLine: SourceMappingEntry[] = [];
+  for (let lineNumber = 1; lineNumber <= sourceLineCount; lineNumber += 1) {
+    const entry =
+      resolveMappingEntryForLine(primary, lineNumber, true)
+      ?? resolveMappingEntryForLine(fallback, lineNumber, true)
+      ?? resolveMappingEntryForLine(fallback, lineNumber)
+      ?? resolveMappingEntryForLine(primary, lineNumber);
+    if (!entry) {
+      continue;
+    }
+    perLine.push(createPerLineEntry(entry, lineNumber, pages));
+  }
+
+  if (perLine.length === 0) {
+    return primary.slice();
+  }
+
+  perLine.sort((a, b) => {
+    if (a.pageIndex !== b.pageIndex) {
+      return a.pageIndex - b.pageIndex;
+    }
+    if (a.yStartPt !== b.yStartPt) {
+      return a.yStartPt - b.yStartPt;
+    }
+    return a.sourceLineStart - b.sourceLineStart;
+  });
+
+  return perLine;
+}
+
+function isSourceMappingCoverageComplete(
+  mapping: readonly SourceMappingEntry[],
+  sourceLineCount: number,
+): boolean {
+  if (mapping.length === 0 || sourceLineCount <= 0) {
+    return false;
+  }
+
+  const covered = new Uint8Array(sourceLineCount + 1);
+  for (const entry of mapping) {
+    const start = clamp(Math.floor(entry.sourceLineStart), 1, sourceLineCount);
+    const end = clamp(Math.floor(entry.sourceLineEnd), start, sourceLineCount);
+    for (let line = start; line <= end; line += 1) {
+      covered[line] = 1;
+    }
+  }
+
+  for (let line = 1; line <= sourceLineCount; line += 1) {
+    if (covered[line] === 0) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getSourceLineCount(markdown: string): number {
+  if (!markdown) {
+    return 0;
+  }
+  const normalized = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return normalized.split('\n').length;
+}
+
+function resolveMappingEntryForLine(
+  entries: readonly SourceMappingEntry[],
+  lineNumber: number,
+  exactOnly = false,
+): SourceMappingEntry | null {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const exact: SourceMappingEntry[] = [];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let nearest: SourceMappingEntry | null = null;
+
+  for (const entry of entries) {
+    if (lineNumber >= entry.sourceLineStart && lineNumber <= entry.sourceLineEnd) {
+      exact.push(entry);
+      continue;
+    }
+
+    const distance = lineNumber < entry.sourceLineStart
+      ? entry.sourceLineStart - lineNumber
+      : lineNumber - entry.sourceLineEnd;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      nearest = entry;
+    }
+  }
+
+  if (exact.length > 0) {
+    return selectBestMappingEntryForLine(exact, lineNumber);
+  }
+
+  if (exactOnly) {
+    return null;
+  }
+
+  return nearest;
+}
+
+function selectBestMappingEntryForLine(
+  entries: readonly SourceMappingEntry[],
+  lineNumber: number,
+): SourceMappingEntry {
+  if (entries.length === 1) {
+    return entries[0];
+  }
+
+  const smallestRangeSpan = entries.reduce(
+    (smallest, entry) => Math.min(smallest, getSourceLineSpan(entry)),
+    Number.POSITIVE_INFINITY,
+  );
+  const mostSpecific = entries
+    .filter((entry) => getSourceLineSpan(entry) === smallestRangeSpan)
+    .slice()
+    .sort((a, b) => {
+      if (a.pageIndex !== b.pageIndex) {
+        return a.pageIndex - b.pageIndex;
+      }
+      return a.yStartPt - b.yStartPt;
+    });
+
+  if (mostSpecific.length === 1) {
+    return mostSpecific[0];
+  }
+
+  const minLine = mostSpecific.reduce(
+    (minValue, entry) => Math.min(minValue, entry.sourceLineStart),
+    Number.POSITIVE_INFINITY,
+  );
+  const maxLine = mostSpecific.reduce(
+    (maxValue, entry) => Math.max(maxValue, entry.sourceLineEnd),
+    Number.NEGATIVE_INFINITY,
+  );
+  const span = Math.max(1, maxLine - minLine);
+  const clampedLine = clamp(Math.floor(lineNumber), minLine, maxLine);
+  const normalized = (clampedLine - minLine) / span;
+  const selectedIndex = Math.round(normalized * (mostSpecific.length - 1));
+  return mostSpecific[clamp(selectedIndex, 0, mostSpecific.length - 1)];
+}
+
+function createPerLineEntry(
+  entry: SourceMappingEntry,
+  lineNumber: number,
+  pages: readonly PageLayout[],
+): SourceMappingEntry {
+  const startLine = entry.sourceLineStart;
+  const endLine = Math.max(startLine, entry.sourceLineEnd);
+  const blockHeightPt = Math.max(MIN_MAPPING_HEIGHT_PT, entry.yEndPt - entry.yStartPt);
+
+  const safePageIndex = clamp(Math.floor(entry.pageIndex), 0, Math.max(0, pages.length - 1));
+  const pageHeightPt = Math.max(MIN_MAPPING_HEIGHT_PT, pages[safePageIndex]?.heightPt ?? MIN_MAPPING_HEIGHT_PT);
+
+  let yStartPt = entry.yStartPt;
+  let lineHeightPt = blockHeightPt;
+
+  if (endLine > startLine) {
+    const clampedLine = clamp(Math.floor(lineNumber), startLine, endLine);
+    const normalizedLine = (clampedLine - startLine) / (endLine - startLine);
+    yStartPt = entry.yStartPt + (blockHeightPt * normalizedLine);
+    lineHeightPt = Math.max(
+      MIN_MAPPING_HEIGHT_PT,
+      blockHeightPt / ((endLine - startLine) + 1),
+    );
+  }
+
+  const clampedStart = clamp(yStartPt, 0, pageHeightPt);
+  const clampedEnd = clamp(clampedStart + lineHeightPt, clampedStart, pageHeightPt);
+  const yEndPt = clampedEnd > clampedStart
+    ? clampedEnd
+    : Math.min(pageHeightPt, clampedStart + MIN_MAPPING_HEIGHT_PT);
+
+  return {
+    sourceLineStart: lineNumber,
+    sourceLineEnd: lineNumber,
+    pageIndex: safePageIndex,
+    yStartPt: clampedStart,
+    yEndPt,
+  };
+}
+
+function getSourceLineSpan(entry: SourceMappingEntry): number {
+  return Math.max(0, entry.sourceLineEnd - entry.sourceLineStart);
+}
+
 function deriveSourceMappingFromSourceSpans(markdown: string, pages: PageLayout[]): SourceMappingEntry[] | null {
   if (!markdown || pages.length === 0) {
     return null;
   }
 
-  const lineStarts = getSourceLineStarts(markdown);
+  const normalizedSource = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lineStarts = getSourceLineStarts(normalizedSource);
   const extracted: SourceMappingEntry[] = [];
 
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
