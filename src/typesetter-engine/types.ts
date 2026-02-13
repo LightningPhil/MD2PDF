@@ -268,6 +268,10 @@ export type TypesetOptions = {
   typography: {
     /** Base font size in points. Default: 12 */
     baseFontSizePt: number;
+    /** Table cell font size in points. Default: ~94% of base */
+    tableFontSizePt?: number;
+    /** Code block font size in points. Default: ~85% of base */
+    codeFontSizePt?: number;
     /** Line height multiplier. Default: 1.4 */
     lineHeight: number;
     /** Spacing between paragraphs in points. Default: 12 */

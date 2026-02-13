@@ -34,6 +34,7 @@
                 <button id="saveBtn">Save</button>
                 <button id="exportPdfBtn">Export PDF</button>
                 <button id="headerFooterBtn">Headers &amp; Footers</button>
+                <button id="settingsBtn">Settings</button>
                 <label class="control-label">
                     Font:
                     <select id="fontSizeSelect">
@@ -69,6 +70,14 @@
                     <select id="emojiModeSelect">
                         <option value="preserve" selected>Preserve</option>
                         <option value="suppress">Suppress</option>
+                    </select>
+                </label>
+                <label class="control-label">
+                    Click Sync:
+                    <select id="clickSyncModeSelect">
+                        <option value="always">Always</option>
+                        <option value="ctrl" selected>Ctrl+Click</option>
+                        <option value="off">Off</option>
                     </select>
                 </label>
             </div>
@@ -506,6 +515,114 @@ $$
             <div class="hf-modal-actions">
                 <button id="hfApplyBtn" type="button">Apply</button>
                 <button id="hfCancelBtn" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModalBackdrop" class="settings-modal-backdrop" hidden>
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+            <div class="settings-modal-header">
+                <h2 id="settingsModalTitle">Typography &amp; Formatting</h2>
+                <button id="settingsModalCloseBtn" class="settings-close-btn" type="button" aria-label="Close settings dialog" title="Close">&times;</button>
+            </div>
+
+            <div class="settings-modal-body">
+                <!-- Font Sizes Section -->
+                <fieldset class="settings-group">
+                    <legend>Font Sizes</legend>
+                    <div class="settings-grid">
+                        <label class="settings-field">
+                            <span class="settings-label">Base Font (pt)</span>
+                            <input id="settingsBaseFontSize" type="number" min="6" max="48" step="1" value="12">
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">Code (pt)</span>
+                            <input id="settingsCodeFontSize" type="number" min="6" max="24" step="1" value="10">
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">Tables (pt)</span>
+                            <input id="settingsTableFontSize" type="number" min="6" max="24" step="1" value="11">
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">Header/Footer (pt)</span>
+                            <input id="settingsHFSize" type="number" min="6" max="18" step="1" value="10">
+                        </label>
+                    </div>
+                </fieldset>
+
+                <!-- Heading Scales Section -->
+                <fieldset class="settings-group">
+                    <legend>Heading Scales</legend>
+                    <p class="settings-hint">Multiplier of base font size</p>
+                    <div class="settings-grid">
+                        <label class="settings-field">
+                            <span class="settings-label">H1 Scale</span>
+                            <input id="settingsH1Scale" type="number" min="1" max="4" step="0.1" value="2.0">
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">H2 Scale</span>
+                            <input id="settingsH2Scale" type="number" min="1" max="3" step="0.1" value="1.5">
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">H3 Scale</span>
+                            <input id="settingsH3Scale" type="number" min="1" max="2.5" step="0.1" value="1.2">
+                        </label>
+                    </div>
+                </fieldset>
+
+                <!-- Spacing Section -->
+                <fieldset class="settings-group">
+                    <legend>Spacing</legend>
+                    <div class="settings-grid">
+                        <label class="settings-field">
+                            <span class="settings-label">Line Height</span>
+                            <input id="settingsLineHeight" type="number" min="1" max="3" step="0.1" value="1.4">
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">Paragraph Spacing (pt)</span>
+                            <input id="settingsParagraphSpacing" type="number" min="0" max="48" step="1" value="12">
+                        </label>
+                    </div>
+                </fieldset>
+
+                <!-- Code Blocks Section -->
+                <fieldset class="settings-group">
+                    <legend>Code Blocks</legend>
+                    <div class="settings-checkboxes">
+                        <label class="settings-checkbox">
+                            <input id="settingsCodeBackground" type="checkbox" checked>
+                            <span>Show background</span>
+                        </label>
+                        <label class="settings-checkbox">
+                            <input id="settingsCodeBorder" type="checkbox" checked>
+                            <span>Show border</span>
+                        </label>
+                        <label class="settings-checkbox">
+                            <input id="settingsCodeLineNumbers" type="checkbox">
+                            <span>Show line numbers</span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <!-- Links Section -->
+                <fieldset class="settings-group">
+                    <legend>Links</legend>
+                    <div class="settings-checkboxes">
+                        <label class="settings-checkbox">
+                            <input id="settingsLinkUnderline" type="checkbox">
+                            <span>Underline links</span>
+                        </label>
+                    </div>
+                </fieldset>
+            </div>
+
+            <div class="settings-modal-actions">
+                <button id="settingsResetBtn" type="button">Reset to Defaults</button>
+                <div class="settings-actions-right">
+                    <button id="settingsCancelBtn" type="button">Cancel</button>
+                    <button id="settingsApplyBtn" type="button">Apply</button>
+                </div>
             </div>
         </div>
     </div>

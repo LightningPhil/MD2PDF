@@ -683,7 +683,7 @@ function layoutCodeBlock(
 ): void {
   const codeOptions = state.options.features.codeBlocks;
   const resolved = state.options.page.resolved;
-  const baseSize = state.options.typography.baseFontSizePt * 0.9;
+  const baseSize = state.options.typography.codeFontSizePt ?? state.options.typography.baseFontSizePt * 0.9;
   const lineHeightPt = Math.max(
     baseSize * 1.28,
     state.metrics.getAscent(fontId, baseSize) + state.metrics.getDescent(fontId, baseSize) + 1
@@ -917,7 +917,7 @@ function layoutTableBlock(
   const resolved = state.options.page.resolved;
   const fontId = state.options.fonts.text.id;
   const codeFontId = state.options.fonts.mono?.id ?? fontId;
-  const fontSizePt = state.options.typography.baseFontSizePt * 0.94;
+  const fontSizePt = state.options.typography.tableFontSizePt ?? state.options.typography.baseFontSizePt * 0.94;
   const lineHeightPt = Math.max(
     fontSizePt * 1.25,
     state.metrics.getAscent(fontId, fontSizePt) + state.metrics.getDescent(fontId, fontSizePt) + 1

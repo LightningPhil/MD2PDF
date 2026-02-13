@@ -14,3 +14,8 @@ export {
   ExportModal,
   type ExportModalElements,
 } from './ExportModal.js';
+export {
+  SettingsModal,
+  type SettingsModalElements,
+  type TypographySettings,
+} from './SettingsModal.js';

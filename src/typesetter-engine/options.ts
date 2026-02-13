@@ -141,6 +141,8 @@ export function createDefaultOptions(overrides: TypesetOptions): TypesetOptions 
     typography: {
       baseFontSizePt:
         overrides.typography?.baseFontSizePt ?? typography.baseFontSizePt,
+      tableFontSizePt: overrides.typography?.tableFontSizePt,
+      codeFontSizePt: overrides.typography?.codeFontSizePt,
       lineHeight: overrides.typography?.lineHeight ?? typography.lineHeight,
       paragraphSpacingPt:
         overrides.typography?.paragraphSpacingPt ?? typography.paragraphSpacingPt,

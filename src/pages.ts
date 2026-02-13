@@ -18,12 +18,29 @@ const DEFAULT_FONT_SIZE_PX = 12;
 const DEFAULT_PAGE_SIZE: PageSizeKey = 'a4';
 const PAGE_GAP_PX = 40;
 
+export interface TypographyConfig {
+  baseFontSizePt?: number;
+  h1Scale?: number;
+  h2Scale?: number;
+  h3Scale?: number;
+  lineHeight?: number;
+  paragraphSpacingPt?: number;
+  codeFontSizePt?: number;
+  tableFontSizePt?: number;
+  headerFooterFontSizePt?: number;
+  linkUnderline?: boolean;
+  codeBlockBackground?: boolean;
+  codeBlockBorder?: boolean;
+  codeBlockLineNumbers?: boolean;
+}
+
 export interface TypesetterConfig {
   pageSize: PageSizeKey;
   marginMm: number;
   fontSizePt: number;
   headerFooter?: HeaderFooterConfig;
   emojiMode?: EmojiMode;
+  typography?: TypographyConfig;
 }
 
 interface SourceLineBox {
@@ -59,6 +76,7 @@ export class PageManager {
   private zoom: number = 1;
   private headerFooter: HeaderFooterConfig | undefined = undefined;
   private emojiMode: EmojiMode = 'preserve';
+  private typographyConfig: TypographyConfig | undefined = undefined;
   private documentTitle: string = 'Untitled';
   private renderRevision: number = 0;
 
@@ -233,6 +251,7 @@ export class PageManager {
       fontSizePt: pxToPt(this.fontSizePx),
       headerFooter: this.headerFooter,
       emojiMode: this.emojiMode,
+      typography: this.typographyConfig,
     };
   }
 
@@ -280,6 +299,21 @@ export class PageManager {
    */
   getEmojiMode(): EmojiMode {
     return this.emojiMode;
+  }
+
+  /**
+   * Sets typography configuration (heading scales, line height, etc.).
+   */
+  setTypographySettings(config: TypographyConfig | undefined): void {
+    this.typographyConfig = config;
+    void this.render();
+  }
+
+  /**
+   * Gets current typography configuration.
+   */
+  getTypographySettings(): TypographyConfig | undefined {
+    return this.typographyConfig;
   }
 
   private async render(): Promise<void> {

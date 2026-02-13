@@ -54,6 +54,21 @@ interface TypesetterConfig {
   fontSizePt: number;
   headerFooter?: HeaderFooterConfig;
   emojiMode?: EmojiMode;
+  typography?: {
+    baseFontSizePt?: number;
+    h1Scale?: number;
+    h2Scale?: number;
+    h3Scale?: number;
+    lineHeight?: number;
+    paragraphSpacingPt?: number;
+    codeFontSizePt?: number;
+    tableFontSizePt?: number;
+    headerFooterFontSizePt?: number;
+    linkUnderline?: boolean;
+    codeBlockBackground?: boolean;
+    codeBlockBorder?: boolean;
+    codeBlockLineNumbers?: boolean;
+  };
 }
 
 let fontsLoaded = false;
@@ -147,20 +162,35 @@ export async function getTypesetter(config: TypesetterConfig): Promise<Typesette
         left: marginPt,
       },
     },
-    headerFooter: config.headerFooter,
+    headerFooter: config.headerFooter
+      ? {
+          ...config.headerFooter,
+          fontSizePt: config.typography?.headerFooterFontSizePt ?? config.headerFooter.fontSizePt ?? 10,
+        }
+      : undefined,
     typography: {
-      baseFontSizePt: config.fontSizePt,
-      lineHeight: 1.4,
-      paragraphSpacingPt: config.fontSizePt,
+      baseFontSizePt: config.typography?.baseFontSizePt ?? config.fontSizePt,
+      tableFontSizePt: config.typography?.tableFontSizePt,
+      codeFontSizePt: config.typography?.codeFontSizePt,
+      lineHeight: config.typography?.lineHeight ?? 1.4,
+      paragraphSpacingPt: config.typography?.paragraphSpacingPt ?? (config.typography?.baseFontSizePt ?? config.fontSizePt),
       headingScale: {
-        h1: 2.0,
-        h2: 1.5,
-        h3: 1.2,
+        h1: config.typography?.h1Scale ?? 2.0,
+        h2: config.typography?.h2Scale ?? 1.5,
+        h3: config.typography?.h3Scale ?? 1.2,
       },
     },
     features: {
       emoji: {
         mode: config.emojiMode ?? 'preserve',
+      },
+      codeBlocks: {
+        background: config.typography?.codeBlockBackground ?? true,
+        border: config.typography?.codeBlockBorder ?? true,
+        lineNumbers: config.typography?.codeBlockLineNumbers ?? false,
+      },
+      typography: {
+        linkUnderline: config.typography?.linkUnderline ?? false,
       },
     },
     fonts: {
@@ -296,6 +326,7 @@ function buildConfigSignature(config: TypesetterConfig): string {
     fontSizePt: config.fontSizePt,
     headerFooter: config.headerFooter ?? null,
     emojiMode: config.emojiMode ?? 'preserve',
+    typography: config.typography ?? null,
   });
 }
 

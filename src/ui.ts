@@ -1,7 +1,7 @@
 import type { HeaderFooterConfig, EmojiMode } from './typesetter.js';
 import { clamp } from './utils/math.js';
 import { ThemeController, SidebarController, PreviewController, type FocusPreviewOptions } from './controllers/index.js';
-import { HelpModal, ExportModal, HeaderFooterModal, type ExportModalElements, type HeaderFooterModalElements } from './modals/index.js';
+import { HelpModal, ExportModal, HeaderFooterModal, SettingsModal, type ExportModalElements, type HeaderFooterModalElements, type SettingsModalElements, type TypographySettings } from './modals/index.js';
 import { EventEmitter } from './utils/event-emitter.js';
 import {
   type PageSizeKey,
@@ -19,6 +19,7 @@ import {
 
 // Re-export types for backwards compatibility
 export type { PageSizeKey, PageSizeSpec, DocumentListItem, UploadedMarkdownFile, ExportModalContext, ExportProgressUpdate, ExportScope, ThemeMode };
+export type { TypographySettings };
 
 export class UIController {
   private uploadBtn: HTMLButtonElement;
@@ -29,6 +30,7 @@ export class UIController {
   private marginSelect: HTMLSelectElement;
   private pageSizeSelect: HTMLSelectElement;
   private emojiModeSelect: HTMLSelectElement;
+  private clickSyncModeSelect: HTMLSelectElement;
 
   private helpToggleBtn: HTMLButtonElement;
   private workspaceShell: HTMLElement;
@@ -45,7 +47,9 @@ export class UIController {
   private readonly exportModal: ExportModal;
   private readonly helpModal: HelpModal;
   private readonly hfModal: HeaderFooterModal;
+  private readonly settingsModal: SettingsModal;
   private headerFooterBtn: HTMLButtonElement;
+  private settingsBtn: HTMLButtonElement;
 
   private readonly minSplitPercent = 20;
   private readonly maxSplitPercent = 80;
@@ -85,6 +89,7 @@ export class UIController {
     this.marginSelect = this.requireElement<HTMLSelectElement>('marginSelect');
     this.pageSizeSelect = this.requireElement<HTMLSelectElement>('pageSizeSelect');
     this.emojiModeSelect = this.requireElement<HTMLSelectElement>('emojiModeSelect');
+    this.clickSyncModeSelect = this.requireElement<HTMLSelectElement>('clickSyncModeSelect');
 
     // Theme controller is self-contained, no need to store reference
     new ThemeController({
@@ -189,6 +194,30 @@ export class UIController {
     };
     this.hfModal = new HeaderFooterModal(hfModalElements);
 
+    // Settings modal
+    this.settingsBtn = this.requireElement<HTMLButtonElement>('settingsBtn');
+    const settingsModalElements: SettingsModalElements = {
+      backdrop: this.requireElement<HTMLElement>('settingsModalBackdrop'),
+      closeBtn: this.requireElement<HTMLButtonElement>('settingsModalCloseBtn'),
+      baseFontSize: this.requireElement<HTMLInputElement>('settingsBaseFontSize'),
+      h1Scale: this.requireElement<HTMLInputElement>('settingsH1Scale'),
+      h2Scale: this.requireElement<HTMLInputElement>('settingsH2Scale'),
+      h3Scale: this.requireElement<HTMLInputElement>('settingsH3Scale'),
+      codeFontSize: this.requireElement<HTMLInputElement>('settingsCodeFontSize'),
+      tableFontSize: this.requireElement<HTMLInputElement>('settingsTableFontSize'),
+      headerFooterFontSize: this.requireElement<HTMLInputElement>('settingsHFSize'),
+      lineHeight: this.requireElement<HTMLInputElement>('settingsLineHeight'),
+      paragraphSpacing: this.requireElement<HTMLInputElement>('settingsParagraphSpacing'),
+      linkUnderline: this.requireElement<HTMLInputElement>('settingsLinkUnderline'),
+      codeBlockBackground: this.requireElement<HTMLInputElement>('settingsCodeBackground'),
+      codeBlockBorder: this.requireElement<HTMLInputElement>('settingsCodeBorder'),
+      codeBlockLineNumbers: this.requireElement<HTMLInputElement>('settingsCodeLineNumbers'),
+      applyBtn: this.requireElement<HTMLButtonElement>('settingsApplyBtn'),
+      resetBtn: this.requireElement<HTMLButtonElement>('settingsResetBtn'),
+      cancelBtn: this.requireElement<HTMLButtonElement>('settingsCancelBtn'),
+    };
+    this.settingsModal = new SettingsModal(settingsModalElements);
+
     this.setupEventListeners();
     this.applySettings();
     this.sidebarController.initializeWidth();
@@ -292,6 +321,28 @@ export class UIController {
 
   getEmojiMode(): EmojiMode {
     return this.emojiModeSelect.value === 'suppress' ? 'suppress' : 'preserve';
+  }
+
+  getClickSyncMode(): 'always' | 'ctrl' | 'off' {
+    const value = this.clickSyncModeSelect.value;
+    if (value === 'always' || value === 'ctrl' || value === 'off') {
+      return value;
+    }
+    return 'ctrl';
+  }
+
+  /**
+   * Gets the current typography settings from the settings modal.
+   */
+  getTypographySettings(): TypographySettings {
+    return this.settingsModal.getSettings();
+  }
+
+  /**
+   * Registers a callback for when typography settings are applied.
+   */
+  onTypographySettingsChange(callback: (settings: TypographySettings) => void): void {
+    this.settingsModal.onApply(callback);
   }
 
   /**
@@ -549,6 +600,11 @@ export class UIController {
     // Header/Footer modal - event handlers managed by HeaderFooterModal class
     this.headerFooterBtn.addEventListener('click', () => {
       this.hfModal.open();
+    });
+
+    // Settings modal - event handlers managed by SettingsModal class
+    this.settingsBtn.addEventListener('click', () => {
+      this.settingsModal.open();
     });
 
     this.markdownEditor.addEventListener('scroll', () => {

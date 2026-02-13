@@ -112,8 +112,36 @@ class MD2PDFApp {
       this.refreshDocumentList();
     });
 
+    this.ui.onTypographySettingsChange((settings) => {
+      this.pageManager.setTypographySettings({
+        baseFontSizePt: settings.baseFontSizePt,
+        h1Scale: settings.h1Scale,
+        h2Scale: settings.h2Scale,
+        h3Scale: settings.h3Scale,
+        lineHeight: settings.lineHeight,
+        paragraphSpacingPt: settings.paragraphSpacingPt,
+        codeFontSizePt: settings.codeFontSizePt,
+        tableFontSizePt: settings.tableFontSizePt,
+        headerFooterFontSizePt: settings.headerFooterFontSizePt,
+        linkUnderline: settings.linkUnderline,
+        codeBlockBackground: settings.codeBlockBackground,
+        codeBlockBorder: settings.codeBlockBorder,
+        codeBlockLineNumbers: settings.codeBlockLineNumbers,
+      });
+      void this.recomputeInactivePageCounts();
+      this.refreshDocumentList();
+    });
+
     // Bidirectional scroll sync: canvas click -> editor
     this.pageManager.getCanvas().addEventListener('click', (event) => {
+      const clickSyncMode = this.ui.getClickSyncMode();
+      if (clickSyncMode === 'off') {
+        return;
+      }
+      if (clickSyncMode === 'ctrl' && !event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
       const canvas = this.pageManager.getCanvas();
       const rect = canvas.getBoundingClientRect();
       const canvasY = event.clientY - rect.top;
