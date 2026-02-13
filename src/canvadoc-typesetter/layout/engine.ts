@@ -21,6 +21,7 @@ import type {
   GlyphRunOp,
   NormalizedTypesetOptions,
   PageLayout,
+  SourceMappingEntry,
   SourceSpan,
   TextSpanOp,
   TypesetDiagnostics,
@@ -75,6 +76,15 @@ type BreakFragment = {
 
 type InlineFragment = TextFragment | MathFragment | BreakFragment;
 
+/**
+ * Internal state for tracking source line Y positions during layout.
+ */
+type SourceLineYRange = {
+  pageIndex: number;
+  yStartPt: number;
+  yEndPt: number;
+};
+
 type LayoutState = {
   pages: PageLayout[];
   currentPage: PageLayout;
@@ -84,6 +94,10 @@ type LayoutState = {
   metrics: FontMetricsProvider;
   mathCache: Map<string, MathBox>;
   spanCounter: number;
+  /** Precomputed byte offsets where each source line starts (for offset→line conversion) */
+  sourceLineStarts: number[];
+  /** Accumulated Y ranges per source line number (1-indexed) */
+  sourceLineRanges: Map<number, SourceLineYRange>;
 };
 
 type ParagraphStyle = {
@@ -108,6 +122,8 @@ type CodeVisualLine = {
 type TableRowLayout = {
   cells: TableCellLayout[];
   heightPt: number;
+  /** Source span for this row, used for source line tracking */
+  sourceSpan?: SourceSpan;
 };
 
 type TableCellLayout = {
@@ -147,7 +163,10 @@ export function layoutDocument(
   const blocks = parseMarkdownBlocks(markdown, { includeSourceSpans: true });
   diagnostics.timingsMs!.parseMarkdown = performanceNow() - parseStart;
 
-  const state = createInitialState(options, diagnostics, metrics);
+  // Precompute line start offsets for source mapping
+  const sourceLineStarts = computeSourceLineStarts(markdown);
+
+  const state = createInitialState(options, diagnostics, metrics, sourceLineStarts);
 
   const layoutStart = performanceNow();
   // Layout stage owns all geometry decisions; renderers should be paint-only.
@@ -163,11 +182,15 @@ export function layoutDocument(
   addHeadersAndFooters(state.pages, options, metrics, diagnostics);
   diagnostics.timingsMs!.headerFooter = performanceNow() - hfStart;
 
+  // Build source mapping from accumulated ranges
+  const sourceMapping = buildSourceMapping(state.sourceLineRanges);
+
   diagnostics.timingsMs!.total = performanceNow() - timingsStart;
 
   return {
     pages: state.pages,
-    diagnostics
+    diagnostics,
+    sourceMapping
   };
 }
 
@@ -279,13 +302,22 @@ function layoutBlock(
       const gap = typography.paragraphSpacingPt * 1.25;
       state.cursorYPt += gap;
       ensureVerticalSpace(1, state);
+      const ruleYPt = state.cursorYPt;
       state.currentPage.ops.push({
         kind: "rule",
         xPt: state.options.page.resolved.contentXPt,
-        yPt: state.cursorYPt,
+        yPt: ruleYPt,
         wPt: state.options.page.resolved.contentWPt,
         hPt: 1
       });
+      // Track horizontal rule source line
+      trackSourceLineRange(
+        block.sourceSpan,
+        state.currentPage.index,
+        ruleYPt - gap,
+        ruleYPt + gap,
+        state
+      );
       state.cursorYPt += gap;
       break;
     }
@@ -295,6 +327,10 @@ function layoutBlock(
 }
 
 function layoutParagraph(text: string, style: ParagraphStyle, state: LayoutState): void {
+  // Track Y position before layout
+  const startPageIndex = state.currentPage.index;
+  const startYPt = state.cursorYPt;
+
   const fragments = style.parseInline
     ? parseParagraphFragments(text, style, state)
     : [
@@ -311,6 +347,16 @@ function layoutParagraph(text: string, style: ParagraphStyle, state: LayoutState
       ];
 
   layoutFragmentsIntoLines(fragments, style, state);
+
+  // Track source line range after layout
+  const endYPt = state.cursorYPt - style.afterPt; // Exclude trailing spacing
+  trackSourceLineRange(
+    style.sourceSpan,
+    startPageIndex,
+    startYPt,
+    endYPt,
+    state
+  );
 }
 
 function parseParagraphFragments(
@@ -774,6 +820,16 @@ function layoutCodeBlock(
         "code",
         visual.sourceSpan
       );
+
+      // Track source line range for this code line
+      trackSourceLineRange(
+        visual.sourceSpan,
+        state.currentPage.index,
+        baseline - ascent,
+        baseline + (lineHeightPt - ascent),
+        state
+      );
+
       baseline += lineHeightPt;
     }
 
@@ -834,11 +890,23 @@ function layoutDisplayMath(expr: string, state: LayoutState, sourceSpan?: Source
   );
   ensureVerticalSpace(lineHeightPt, state);
 
+  const startPageIndex = state.currentPage.index;
+  const startYPt = state.cursorYPt;
+
   const baselinePt = state.cursorYPt + Math.max(0, (lineHeightPt - (box.a + box.d)) / 2) + box.a;
   const xPt = resolved.contentXPt + (resolved.contentWPt - box.w) / 2;
   box.emit(xPt, baselinePt, state.currentPage.ops);
 
   state.cursorYPt += lineHeightPt + afterPt;
+
+  // Track source line range for display math
+  trackSourceLineRange(
+    sourceSpan,
+    startPageIndex,
+    startYPt,
+    state.cursorYPt - afterPt,
+    state
+  );
 }
 
 function layoutTableBlock(
@@ -1044,6 +1112,15 @@ function drawTableChunk(
     paddingYPt
   );
 
+  // Track header row source line
+  trackSourceLineRange(
+    header.sourceSpan,
+    state.currentPage.index,
+    rowY,
+    rowY + header.heightPt,
+    state
+  );
+
   rowY += header.heightPt;
   ops.push({
     kind: "rule",
@@ -1056,6 +1133,7 @@ function drawTableChunk(
 
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
+    const rowStartY = rowY;
     drawTableRowText(
       state,
       row,
@@ -1067,6 +1145,16 @@ function drawTableChunk(
       paddingYPt
     );
     rowY += row.heightPt;
+
+    // Track body row source line
+    trackSourceLineRange(
+      row.sourceSpan,
+      state.currentPage.index,
+      rowStartY,
+      rowY,
+      state
+    );
+
     if (i < rows.length - 1) {
       ops.push({
         kind: "rule",
@@ -1153,7 +1241,8 @@ function buildTableRowLayout(
 
   return {
     cells,
-    heightPt: maxContentHeightPt + paddingYPt * 2
+    heightPt: maxContentHeightPt + paddingYPt * 2,
+    sourceSpan: style.sourceSpan
   };
 }
 
@@ -1376,7 +1465,8 @@ function formatMathErrorText(message: string): string {
 function createInitialState(
   options: NormalizedTypesetOptions,
   diagnostics: TypesetDiagnostics,
-  metrics: FontMetricsProvider
+  metrics: FontMetricsProvider,
+  sourceLineStarts: number[]
 ): LayoutState {
   const firstPage: PageLayout = {
     index: 0,
@@ -1393,7 +1483,9 @@ function createInitialState(
     options,
     metrics,
     mathCache: new Map<string, MathBox>(),
-    spanCounter: 0
+    spanCounter: 0,
+    sourceLineStarts,
+    sourceLineRanges: new Map()
   };
 }
 
@@ -2604,4 +2696,131 @@ function pushWarningOnce(diagnostics: TypesetDiagnostics, message: string): void
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Source Line Mapping Utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Compute byte offsets where each source line begins.
+ * Returns an array where index i holds the byte offset of line (i+1).
+ * Line numbers are 1-indexed in the result usage.
+ */
+function computeSourceLineStarts(source: string): number[] {
+  const lineStarts: number[] = [0]; // Line 1 starts at offset 0
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === "\r") {
+      if (source[i + 1] === "\n") {
+        lineStarts.push(i + 2);
+        i += 1; // Skip the \n
+      } else {
+        lineStarts.push(i + 1);
+      }
+    } else if (char === "\n") {
+      lineStarts.push(i + 1);
+    }
+  }
+  return lineStarts;
+}
+
+/**
+ * Convert a byte offset to a 1-indexed line number using binary search.
+ */
+function offsetToLineNumber(offset: number, lineStarts: number[]): number {
+  if (lineStarts.length === 0) {
+    return 1;
+  }
+
+  let low = 0;
+  let high = lineStarts.length - 1;
+  let best = 0;
+  const target = Math.max(0, Math.floor(offset));
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (lineStarts[mid] <= target) {
+      best = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return best + 1; // Convert to 1-indexed
+}
+
+/**
+ * Track a rendered region for a source span, updating the sourceLineRanges map.
+ */
+function trackSourceLineRange(
+  sourceSpan: SourceSpan | undefined,
+  pageIndex: number,
+  yStartPt: number,
+  yEndPt: number,
+  state: LayoutState
+): void {
+  if (!sourceSpan) {
+    return;
+  }
+
+  const startLine = offsetToLineNumber(sourceSpan.start, state.sourceLineStarts);
+  const endLine = offsetToLineNumber(
+    Math.max(sourceSpan.start, sourceSpan.end - 1),
+    state.sourceLineStarts
+  );
+
+  for (let line = startLine; line <= endLine; line += 1) {
+    const existing = state.sourceLineRanges.get(line);
+    if (!existing) {
+      state.sourceLineRanges.set(line, {
+        pageIndex,
+        yStartPt,
+        yEndPt: Math.max(yStartPt + 1, yEndPt)
+      });
+    } else if (existing.pageIndex === pageIndex) {
+      // Extend the range on the same page
+      existing.yStartPt = Math.min(existing.yStartPt, yStartPt);
+      existing.yEndPt = Math.max(existing.yEndPt, yEndPt);
+    } else if (pageIndex > existing.pageIndex) {
+      // Content moved to a later page; prefer the later position
+      existing.pageIndex = pageIndex;
+      existing.yStartPt = yStartPt;
+      existing.yEndPt = Math.max(yStartPt + 1, yEndPt);
+    }
+    // If existing.pageIndex > pageIndex, keep the existing (later page wins)
+  }
+}
+
+/**
+ * Build the final source mapping array from accumulated ranges.
+ */
+function buildSourceMapping(
+  sourceLineRanges: Map<number, SourceLineYRange>
+): SourceMappingEntry[] {
+  const entries: SourceMappingEntry[] = [];
+
+  for (const [lineNumber, range] of sourceLineRanges) {
+    entries.push({
+      sourceLineStart: lineNumber,
+      sourceLineEnd: lineNumber,
+      pageIndex: range.pageIndex,
+      yStartPt: range.yStartPt,
+      yEndPt: range.yEndPt
+    });
+  }
+
+  // Sort by page, then Y position, then line number
+  entries.sort((a, b) => {
+    if (a.pageIndex !== b.pageIndex) {
+      return a.pageIndex - b.pageIndex;
+    }
+    if (a.yStartPt !== b.yStartPt) {
+      return a.yStartPt - b.yStartPt;
+    }
+    return a.sourceLineStart - b.sourceLineStart;
+  });
+
+  return entries;
 }

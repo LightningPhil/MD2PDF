@@ -1,223 +1,62 @@
 import type { HeaderFooterConfig, EmojiMode } from './typesetter.js';
+import { clamp } from './utils/math.js';
+import { ThemeController, SidebarController, PreviewController, type FocusPreviewOptions } from './controllers/index.js';
+import { HelpModal, ExportModal, HeaderFooterModal, type ExportModalElements, type HeaderFooterModalElements } from './modals/index.js';
+import { EventEmitter } from './utils/event-emitter.js';
+import {
+  type PageSizeKey,
+  type PageSizeSpec,
+  PAGE_SIZES,
+  type DocumentListItem,
+  type UploadedMarkdownFile,
+  type SavePayload,
+  type ThemeMode,
+  type ExportScope,
+  type ExportModalContext,
+  type ExportProgressUpdate,
+  type UIEvents,
+} from './types/index.js';
 
-// Math render mode - kept for backwards compatibility in UI, though typesetter handles math natively
-export type MathRenderMode = 'html' | 'svg';
-
-// Utility function to convert mm to px
-const MM_TO_PX = 96 / 25.4;
-function mmToPx(mm: number): number {
-  return mm * MM_TO_PX;
-}
-
-export type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
-export type ThemeMode = 'dark' | 'light';
-export type PageSizeKey = 'a4' | 'letter' | 'legal' | 'tabloid' | 'a3';
-export type ExportScope = 'current' | 'all';
-
-export interface PageSizeSpec {
-  widthMm: number;
-  heightMm: number;
-}
-
-export interface UploadedMarkdownFile {
-  filename: string;
-  content: string;
-}
-
-export interface DocumentListItem {
-  id: string;
-  filename: string;
-  pageCount: number;
-  isActive: boolean;
-}
-
-export interface ExportModalContext {
-  activeFilename: string;
-  totalFiles: number;
-  isApiAvailable?: boolean;
-}
-
-export interface ExportProgressUpdate {
-  processed: number;
-  total: number;
-  message: string;
-  totalElapsedMs?: number;
-  currentFileElapsedMs?: number;
-}
-
-interface SavePayload {
-  content: string;
-  filename: string;
-}
-
-const THEME_STORAGE_KEY = 'md2pdf.theme';
-const SIDEBAR_WIDTH_STORAGE_KEY = 'md2pdf.sidebar.width';
-const PREVIEW_PULSE_SUPPRESSION_WINDOW_MS = 2 * 60 * 1000;
-
-interface PreviewPulseState {
-  anchorKey: string;
-  timestampMs: number;
-  previewScrollRevision: number;
-  editorScrollRevision: number;
-}
-
-interface FocusPreviewOptions {
-  suppressPulseIfStable?: boolean;
-}
-
-const PAGE_SIZES: Record<PageSizeKey, PageSizeSpec> = {
-  a4: { widthMm: 210, heightMm: 297 },
-  letter: { widthMm: 215.9, heightMm: 279.4 },
-  legal: { widthMm: 215.9, heightMm: 355.6 },
-  tabloid: { widthMm: 279.4, heightMm: 431.8 },
-  a3: { widthMm: 297, heightMm: 420 },
-};
+// Re-export types for backwards compatibility
+export type { PageSizeKey, PageSizeSpec, DocumentListItem, UploadedMarkdownFile, ExportModalContext, ExportProgressUpdate, ExportScope, ThemeMode };
 
 export class UIController {
   private uploadBtn: HTMLButtonElement;
   private saveBtn: HTMLButtonElement;
   private exportPdfBtn: HTMLButtonElement;
-  private mathToggleBtn: HTMLButtonElement;
   private uploadInput: HTMLInputElement;
   private fontSizeSelect: HTMLSelectElement;
   private marginSelect: HTMLSelectElement;
   private pageSizeSelect: HTMLSelectElement;
   private emojiModeSelect: HTMLSelectElement;
 
-  private themeToggleBtn: HTMLButtonElement;
   private helpToggleBtn: HTMLButtonElement;
   private workspaceShell: HTMLElement;
-  private sidebarToggleBtn: HTMLButtonElement;
-  private sidebarToggleIcon: HTMLElement;
+  private readonly sidebarController: SidebarController;
   private documentList: HTMLElement;
-  private sidebarDivider: HTMLElement;
 
   private mainContainer: HTMLElement;
   private paneDivider: HTMLElement;
   private markdownEditor: HTMLTextAreaElement;
 
-  private previewViewport: HTMLElement;
-  private previewCanvasSizer: HTMLElement;
   private previewContainer: HTMLElement;
-  private fitWidthBtn: HTMLButtonElement;
-  private fitPageBtn: HTMLButtonElement;
-  private zoomInBtn: HTMLButtonElement;
-  private zoomOutBtn: HTMLButtonElement;
-  private zoomReadout: HTMLElement;
+  private readonly previewController: PreviewController;
 
-  private exportModalBackdrop: HTMLElement;
-  private exportModalCloseBtn: HTMLButtonElement;
-  private exportModalSummary: HTMLElement;
-  private exportScopeCurrent: HTMLInputElement;
-  private exportScopeAll: HTMLInputElement;
-  private exportScopeCurrentLabel: HTMLElement;
-  private exportScopeAllLabel: HTMLElement;
-  private exportProgressText: HTMLElement;
-  private exportProgressCount: HTMLElement;
-  private exportProgressBar: HTMLElement;
-  private exportLog: HTMLElement;
-  private exportStartBtn: HTMLButtonElement;
-  private exportCancelBtn: HTMLButtonElement;
-  private exportDismissBtn: HTMLButtonElement;
-
-  private helpModalBackdrop: HTMLElement;
-  private helpModalBody: HTMLElement;
-  private helpModalCloseBtn: HTMLButtonElement;
-  private helpTopicNavBtns: HTMLButtonElement[];
-  private helpTopicPages: HTMLElement[];
-  private llmPromptCopyBtn: HTMLButtonElement;
-  private llmPromptText: HTMLElement;
-  private llmPromptCopyStatus: HTMLElement;
-
-  // Header/Footer modal elements
+  private readonly exportModal: ExportModal;
+  private readonly helpModal: HelpModal;
+  private readonly hfModal: HeaderFooterModal;
   private headerFooterBtn: HTMLButtonElement;
-  private hfModalBackdrop: HTMLElement;
-  private hfModalCloseBtn: HTMLButtonElement;
-  private hfModeNone: HTMLInputElement;
-  private hfModeAuto: HTMLInputElement;
-  private hfModeManual: HTMLInputElement;
-  private hfAutoSection: HTMLElement;
-  private hfManualSection: HTMLElement;
-  private hfAutoSkipFirst: HTMLInputElement;
-  private hfHeaderLeft: HTMLInputElement;
-  private hfHeaderCenter: HTMLInputElement;
-  private hfHeaderRight: HTMLInputElement;
-  private hfFooterLeft: HTMLInputElement;
-  private hfFooterCenter: HTMLInputElement;
-  private hfFooterRight: HTMLInputElement;
-  private hfManualSkipFirst: HTMLInputElement;
-  private hfApplyBtn: HTMLButtonElement;
-  private hfCancelBtn: HTMLButtonElement;
-
-  private currentMathMode: MathRenderMode = 'html';
-  private currentTheme: ThemeMode = 'dark';
-  private isSidebarCollapsed = false;
-
-  private zoomMode: ZoomMode = 'fit-width';
-  private zoomLevel = 1;
-
-  private readonly minZoom = 0.35;
-  private readonly maxZoom = 3;
-  private readonly zoomStep = 0.1;
-  private readonly previewSideGapPx = 24;
-  private readonly previewFocusTopOffsetPx = 92;
-  private readonly previewFocusSidePaddingPx = 26;
-  private previewFocusTarget: HTMLElement | null = null;
-  private previewFocusPage: HTMLElement | null = null;
-  private previewFocusResetTimer: number | null = null;
-  private recentEditorPulseState: PreviewPulseState | null = null;
-  private previewScrollRevision = 0;
-  private editorScrollRevision = 0;
-  private ignorePreviewScrollRevisionUntilMs = 0;
-  private canvasHighlightOverlay: HTMLElement | null = null;
-  private canvasHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly minSplitPercent = 20;
   private readonly maxSplitPercent = 80;
   private splitPercent = 50;
   private isDraggingDivider = false;
-  private readonly minSidebarWidthPx = 220;
-  private readonly maxSidebarWidthPx = 520;
-  private sidebarWidthPx = 290;
-  private isDraggingSidebarDivider = false;
 
-  private isExportModalOpen = false;
-  private isExporting = false;
-  private isHelpModalOpen = false;
-  private isHfModalOpen = false;
-  private llmPromptCopyStatusTimer: number | null = null;
-  private exportContext: ExportModalContext = {
-    activeFilename: 'Untitled.md',
-    totalFiles: 1,
-    isApiAvailable: true,
-  };
+  // Event emitter for decoupled event handling
+  private readonly events = new EventEmitter<UIEvents>();
 
-  // Header/Footer configuration
-  private hfMode: 'none' | 'auto' | 'manual' = 'none';
-  private hfConfig = {
-    headerLeft: '',
-    headerCenter: '',
-    headerRight: '',
-    footerLeft: '',
-    footerCenter: '',
-    footerRight: '',
-    skipFirstPage: false,
-  };
-  private documentTitle = 'Untitled';
-
-  // Callbacks
-  private fileUploadCallback?: (files: UploadedMarkdownFile[]) => void;
+  // File save callback kept separate as it returns a value (not event-compatible)
   private fileSaveCallback?: () => SavePayload;
-  private exportContextRequestCallback?: () => ExportModalContext;
-  private exportStartCallback?: (scope: ExportScope) => void;
-  private exportCancelCallback?: () => void;
-  private documentSelectCallback?: (documentId: string) => void;
-  private documentRenameCallback?: (documentId: string, nextFilename: string) => void;
-  private documentCloseCallback?: (documentId: string) => void;
-  private previewSourceLineSelectCallback?: (lineNumber: number) => void;
-  private mathModeChangeCallback?: (mode: MathRenderMode) => void;
-  private settingsChangeCallback?: () => void;
-  private headerFooterChangeCallback?: () => void;
 
   private readonly onDividerPointerMove = (event: PointerEvent): void => {
     if (!this.isDraggingDivider || this.isStackedLayout()) {
@@ -237,185 +76,191 @@ export class UIController {
     this.releaseDragStylesIfIdle();
   };
 
-  private readonly onSidebarDividerPointerMove = (event: PointerEvent): void => {
-    if (!this.isDraggingSidebarDivider || this.isStackedLayout() || this.isSidebarCollapsed) {
-      return;
-    }
-
-    this.updateSidebarWidthFromPointerX(event.clientX);
-    this.refreshPreviewViewport();
-  };
-
-  private readonly onSidebarDividerPointerUp = (): void => {
-    if (!this.isDraggingSidebarDivider) {
-      return;
-    }
-
-    this.isDraggingSidebarDivider = false;
-    this.releaseDragStylesIfIdle();
-  };
-
   constructor() {
     this.uploadBtn = this.requireElement<HTMLButtonElement>('uploadBtn');
     this.saveBtn = this.requireElement<HTMLButtonElement>('saveBtn');
     this.exportPdfBtn = this.requireElement<HTMLButtonElement>('exportPdfBtn');
-    this.mathToggleBtn = this.requireElement<HTMLButtonElement>('mathToggle');
     this.uploadInput = this.requireElement<HTMLInputElement>('uploadFile');
     this.fontSizeSelect = this.requireElement<HTMLSelectElement>('fontSizeSelect');
     this.marginSelect = this.requireElement<HTMLSelectElement>('marginSelect');
     this.pageSizeSelect = this.requireElement<HTMLSelectElement>('pageSizeSelect');
     this.emojiModeSelect = this.requireElement<HTMLSelectElement>('emojiModeSelect');
 
-    this.themeToggleBtn = this.requireElement<HTMLButtonElement>('themeToggle');
+    // Theme controller is self-contained, no need to store reference
+    new ThemeController({
+      toggleBtn: this.requireElement<HTMLButtonElement>('themeToggle'),
+    });
     this.helpToggleBtn = this.requireElement<HTMLButtonElement>('helpToggleBtn');
     this.workspaceShell = this.requireElement<HTMLElement>('workspaceShell');
-    this.sidebarToggleBtn = this.requireElement<HTMLButtonElement>('sidebarToggleBtn');
-    this.sidebarToggleIcon = this.requireElement<HTMLElement>('sidebarToggleIcon');
+    this.sidebarController = new SidebarController(
+      {
+        workspaceShell: this.workspaceShell,
+        toggleBtn: this.requireElement<HTMLButtonElement>('sidebarToggleBtn'),
+        toggleIcon: this.requireElement<HTMLElement>('sidebarToggleIcon'),
+        divider: this.requireElement<HTMLElement>('sidebarDivider'),
+      },
+      {},
+      {
+        onViewportRefresh: () => this.refreshPreviewViewport(),
+        onDragStateChange: () => this.releaseDragStylesIfIdle(),
+      }
+    );
     this.documentList = this.requireElement<HTMLElement>('documentList');
-    this.sidebarDivider = this.requireElement<HTMLElement>('sidebarDivider');
 
     this.mainContainer = this.requireElement<HTMLElement>('mainContainer');
     this.paneDivider = this.requireElement<HTMLElement>('paneDivider');
     this.markdownEditor = this.requireElement<HTMLTextAreaElement>('markdownEditor');
 
-    this.previewViewport = this.requireElement<HTMLElement>('previewViewport');
-    this.previewCanvasSizer = this.requireElement<HTMLElement>('previewCanvasSizer');
     this.previewContainer = this.requireElement<HTMLElement>('previewContainer');
-    this.fitWidthBtn = this.requireElement<HTMLButtonElement>('fitWidthBtn');
-    this.fitPageBtn = this.requireElement<HTMLButtonElement>('fitPageBtn');
-    this.zoomInBtn = this.requireElement<HTMLButtonElement>('zoomInBtn');
-    this.zoomOutBtn = this.requireElement<HTMLButtonElement>('zoomOutBtn');
-    this.zoomReadout = this.requireElement<HTMLElement>('zoomReadout');
+    this.previewController = new PreviewController(
+      {
+        previewViewport: this.requireElement<HTMLElement>('previewViewport'),
+        previewCanvasSizer: this.requireElement<HTMLElement>('previewCanvasSizer'),
+        previewContainer: this.previewContainer,
+        fitWidthBtn: this.requireElement<HTMLButtonElement>('fitWidthBtn'),
+        fitPageBtn: this.requireElement<HTMLButtonElement>('fitPageBtn'),
+        zoomInBtn: this.requireElement<HTMLButtonElement>('zoomInBtn'),
+        zoomOutBtn: this.requireElement<HTMLButtonElement>('zoomOutBtn'),
+        zoomReadout: this.requireElement<HTMLElement>('zoomReadout'),
+      },
+      {},
+      {
+        getPageSizeSpec: () => this.getPageSizeSpec(),
+      }
+    );
 
-    this.exportModalBackdrop = this.requireElement<HTMLElement>('exportModalBackdrop');
-    this.exportModalCloseBtn = this.requireElement<HTMLButtonElement>('exportModalCloseBtn');
-    this.exportModalSummary = this.requireElement<HTMLElement>('exportModalSummary');
-    this.exportScopeCurrent = this.requireElement<HTMLInputElement>('exportScopeCurrent');
-    this.exportScopeAll = this.requireElement<HTMLInputElement>('exportScopeAll');
-    this.exportScopeCurrentLabel = this.requireElement<HTMLElement>('exportScopeCurrentLabel');
-    this.exportScopeAllLabel = this.requireElement<HTMLElement>('exportScopeAllLabel');
-    this.exportProgressText = this.requireElement<HTMLElement>('exportProgressText');
-    this.exportProgressCount = this.requireElement<HTMLElement>('exportProgressCount');
-    this.exportProgressBar = this.requireElement<HTMLElement>('exportProgressBar');
-    this.exportLog = this.requireElement<HTMLElement>('exportLog');
-    this.exportStartBtn = this.requireElement<HTMLButtonElement>('exportStartBtn');
-    this.exportCancelBtn = this.requireElement<HTMLButtonElement>('exportCancelBtn');
-    this.exportDismissBtn = this.requireElement<HTMLButtonElement>('exportDismissBtn');
-    this.helpModalBackdrop = this.requireElement<HTMLElement>('helpModalBackdrop');
-    this.helpModalBody = this.requireElement<HTMLElement>('helpModalBody');
-    this.helpModalCloseBtn = this.requireElement<HTMLButtonElement>('helpModalCloseBtn');
-    this.llmPromptCopyBtn = this.requireElement<HTMLButtonElement>('llmPromptCopyBtn');
-    this.llmPromptText = this.requireElement<HTMLElement>('llmPromptText');
-    this.llmPromptCopyStatus = this.requireElement<HTMLElement>('llmPromptCopyStatus');
+    const exportModalElements: ExportModalElements = {
+      backdrop: this.requireElement<HTMLElement>('exportModalBackdrop'),
+      closeBtn: this.requireElement<HTMLButtonElement>('exportModalCloseBtn'),
+      summary: this.requireElement<HTMLElement>('exportModalSummary'),
+      scopeCurrent: this.requireElement<HTMLInputElement>('exportScopeCurrent'),
+      scopeAll: this.requireElement<HTMLInputElement>('exportScopeAll'),
+      scopeCurrentLabel: this.requireElement<HTMLElement>('exportScopeCurrentLabel'),
+      scopeAllLabel: this.requireElement<HTMLElement>('exportScopeAllLabel'),
+      progressText: this.requireElement<HTMLElement>('exportProgressText'),
+      progressCount: this.requireElement<HTMLElement>('exportProgressCount'),
+      progressBar: this.requireElement<HTMLElement>('exportProgressBar'),
+      log: this.requireElement<HTMLElement>('exportLog'),
+      startBtn: this.requireElement<HTMLButtonElement>('exportStartBtn'),
+      cancelBtn: this.requireElement<HTMLButtonElement>('exportCancelBtn'),
+      dismissBtn: this.requireElement<HTMLButtonElement>('exportDismissBtn'),
+      exportPdfBtn: this.exportPdfBtn,
+    };
+    this.exportModal = new ExportModal(exportModalElements);
     
-    this.helpTopicNavBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.help-topic-nav-btn'));
-    this.helpTopicPages = Array.from(document.querySelectorAll<HTMLElement>('.help-topic-page'));
+    const helpTopicNavBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.help-topic-nav-btn'));
+    const helpTopicPages = Array.from(document.querySelectorAll<HTMLElement>('.help-topic-page'));
     
-    if (this.helpTopicNavBtns.length === 0 || this.helpTopicPages.length === 0) {
+    if (helpTopicNavBtns.length === 0 || helpTopicPages.length === 0) {
       throw new Error('Help modal requires topic navigation buttons and pages');
     }
+    
+    this.helpModal = new HelpModal({
+      backdrop: this.requireElement<HTMLElement>('helpModalBackdrop'),
+      closeBtn: this.requireElement<HTMLButtonElement>('helpModalCloseBtn'),
+      body: this.requireElement<HTMLElement>('helpModalBody'),
+      topicNavBtns: helpTopicNavBtns,
+      topicPages: helpTopicPages,
+      llmPromptCopyBtn: this.requireElement<HTMLButtonElement>('llmPromptCopyBtn'),
+      llmPromptText: this.requireElement<HTMLElement>('llmPromptText'),
+      llmPromptCopyStatus: this.requireElement<HTMLElement>('llmPromptCopyStatus'),
+    });
 
-    // Header/Footer modal elements
+    // Header/Footer modal
     this.headerFooterBtn = this.requireElement<HTMLButtonElement>('headerFooterBtn');
-    this.hfModalBackdrop = this.requireElement<HTMLElement>('headerFooterModalBackdrop');
-    this.hfModalCloseBtn = this.requireElement<HTMLButtonElement>('hfModalCloseBtn');
-    this.hfModeNone = this.requireElement<HTMLInputElement>('hfModeNone');
-    this.hfModeAuto = this.requireElement<HTMLInputElement>('hfModeAuto');
-    this.hfModeManual = this.requireElement<HTMLInputElement>('hfModeManual');
-    this.hfAutoSection = this.requireElement<HTMLElement>('hfAutoSection');
-    this.hfManualSection = this.requireElement<HTMLElement>('hfManualSection');
-    this.hfAutoSkipFirst = this.requireElement<HTMLInputElement>('hfAutoSkipFirst');
-    this.hfHeaderLeft = this.requireElement<HTMLInputElement>('hfHeaderLeft');
-    this.hfHeaderCenter = this.requireElement<HTMLInputElement>('hfHeaderCenter');
-    this.hfHeaderRight = this.requireElement<HTMLInputElement>('hfHeaderRight');
-    this.hfFooterLeft = this.requireElement<HTMLInputElement>('hfFooterLeft');
-    this.hfFooterCenter = this.requireElement<HTMLInputElement>('hfFooterCenter');
-    this.hfFooterRight = this.requireElement<HTMLInputElement>('hfFooterRight');
-    this.hfManualSkipFirst = this.requireElement<HTMLInputElement>('hfManualSkipFirst');
-    this.hfApplyBtn = this.requireElement<HTMLButtonElement>('hfApplyBtn');
-    this.hfCancelBtn = this.requireElement<HTMLButtonElement>('hfCancelBtn');
+    const hfModalElements: HeaderFooterModalElements = {
+      backdrop: this.requireElement<HTMLElement>('headerFooterModalBackdrop'),
+      closeBtn: this.requireElement<HTMLButtonElement>('hfModalCloseBtn'),
+      modeNone: this.requireElement<HTMLInputElement>('hfModeNone'),
+      modeAuto: this.requireElement<HTMLInputElement>('hfModeAuto'),
+      modeManual: this.requireElement<HTMLInputElement>('hfModeManual'),
+      autoSection: this.requireElement<HTMLElement>('hfAutoSection'),
+      manualSection: this.requireElement<HTMLElement>('hfManualSection'),
+      autoSkipFirst: this.requireElement<HTMLInputElement>('hfAutoSkipFirst'),
+      headerLeft: this.requireElement<HTMLInputElement>('hfHeaderLeft'),
+      headerCenter: this.requireElement<HTMLInputElement>('hfHeaderCenter'),
+      headerRight: this.requireElement<HTMLInputElement>('hfHeaderRight'),
+      footerLeft: this.requireElement<HTMLInputElement>('hfFooterLeft'),
+      footerCenter: this.requireElement<HTMLInputElement>('hfFooterCenter'),
+      footerRight: this.requireElement<HTMLInputElement>('hfFooterRight'),
+      manualSkipFirst: this.requireElement<HTMLInputElement>('hfManualSkipFirst'),
+      applyBtn: this.requireElement<HTMLButtonElement>('hfApplyBtn'),
+      cancelBtn: this.requireElement<HTMLButtonElement>('hfCancelBtn'),
+    };
+    this.hfModal = new HeaderFooterModal(hfModalElements);
 
     this.setupEventListeners();
     this.applySettings();
-    this.initializeTheme();
-    this.initializeSidebarWidth();
+    this.sidebarController.initializeWidth();
     this.setSplitPercent(this.splitPercent);
-    this.updateMathToggleButton();
-    this.updateSidebarToggleButton();
     this.refreshPreviewViewport();
-    this.resetExportPanel();
-    this.applyExportContext();
   }
 
   /**
-   * Sets the callback for file upload.
+   * Subscribe to file upload events.
+   * @returns Unsubscribe function
    */
-  onFileUpload(callback: (files: UploadedMarkdownFile[]) => void): void {
-    this.fileUploadCallback = callback;
+  onFileUpload(callback: (files: UploadedMarkdownFile[]) => void): () => void {
+    return this.events.on('file:upload', ({ files }) => callback(files));
   }
 
   /**
-   * Sets the callback for file save.
+   * Sets the callback for file save (synchronous, returns payload).
    */
   onFileSave(callback: () => SavePayload): void {
     this.fileSaveCallback = callback;
   }
 
   onExportContextRequest(callback: () => ExportModalContext): void {
-    this.exportContextRequestCallback = callback;
+    this.exportModal.onContextRequest(callback);
   }
 
   onExportStart(callback: (scope: ExportScope) => void): void {
-    this.exportStartCallback = callback;
+    this.exportModal.onStart(callback);
   }
 
   onExportCancel(callback: () => void): void {
-    this.exportCancelCallback = callback;
-  }
-
-  onDocumentSelect(callback: (documentId: string) => void): void {
-    this.documentSelectCallback = callback;
-  }
-
-  onDocumentRename(callback: (documentId: string, nextFilename: string) => void): void {
-    this.documentRenameCallback = callback;
-  }
-
-  onDocumentClose(callback: (documentId: string) => void): void {
-    this.documentCloseCallback = callback;
-  }
-
-  onPreviewSourceLineSelect(callback: (lineNumber: number) => void): void {
-    this.previewSourceLineSelectCallback = callback;
+    this.exportModal.onCancel(callback);
   }
 
   /**
-   * Sets the callback for math mode changes.
+   * Subscribe to document select events.
+   * @returns Unsubscribe function
    */
-  onMathModeChange(callback: (mode: MathRenderMode) => void): void {
-    this.mathModeChangeCallback = callback;
+  onDocumentSelect(callback: (documentId: string) => void): () => void {
+    return this.events.on('document:select', ({ documentId }) => callback(documentId));
   }
 
   /**
-   * Sets the callback for settings changes.
+   * Subscribe to document rename events.
+   * @returns Unsubscribe function
    */
-  onSettingsChange(callback: () => void): void {
-    this.settingsChangeCallback = callback;
+  onDocumentRename(callback: (documentId: string, nextFilename: string) => void): () => void {
+    return this.events.on('document:rename', ({ documentId, nextFilename }) => callback(documentId, nextFilename));
   }
 
   /**
-   * Updates math mode and button label.
+   * Subscribe to document close events.
+   * @returns Unsubscribe function
    */
-  setMathMode(mode: MathRenderMode): void {
-    this.currentMathMode = mode;
-    this.updateMathToggleButton();
+  onDocumentClose(callback: (documentId: string) => void): () => void {
+    return this.events.on('document:close', ({ documentId }) => callback(documentId));
   }
 
   /**
-   * Gets the current math mode.
+   * Subscribe to preview source line selection events.
+   * @returns Unsubscribe function
    */
-  getMathMode(): MathRenderMode {
-    return this.currentMathMode;
+  onPreviewSourceLineSelect(callback: (lineNumber: number) => void): () => void {
+    return this.previewController.onPreviewSourceLineSelect(callback);
+  }
+
+  /**
+   * Subscribe to settings change events.
+   * @returns Unsubscribe function
+   */
+  onSettingsChange(callback: () => void): () => void {
+    return this.events.on('settings:change', callback);
   }
 
   /**
@@ -453,32 +298,21 @@ export class UIController {
    * Recomputes zoom/fit after pages are rendered or viewport changes.
    */
   refreshPreviewViewport(): void {
-    if (this.zoomMode === 'fit-width') {
-      this.zoomLevel = this.calculateFitWidthZoom();
-    } else if (this.zoomMode === 'fit-page') {
-      this.zoomLevel = this.calculateFitPageZoom();
-    }
-
-    this.applyPreviewZoom();
+    this.previewController.refreshPreviewViewport();
   }
 
   /**
    * Gets the current preview zoom level.
    */
   getPreviewZoomLevel(): number {
-    return this.zoomLevel;
+    return this.previewController.getPreviewZoomLevel();
   }
 
   /**
    * Converts a zoomed canvas Y coordinate from pointer events into unscaled canvas space.
    */
   toUnscaledCanvasY(canvasY: number): number {
-    const zoomLevel = this.getPreviewZoomLevel();
-    if (!Number.isFinite(canvasY) || zoomLevel <= 0) {
-      return 0;
-    }
-
-    return canvasY / zoomLevel;
+    return this.previewController.toUnscaledCanvasY(canvasY);
   }
 
   /**
@@ -486,22 +320,7 @@ export class UIController {
    * Returns true when a matching block was found.
    */
   focusPreviewOnSourceLine(lineNumber: number, options: FocusPreviewOptions = {}): boolean {
-    if (!Number.isFinite(lineNumber) || lineNumber < 1) {
-      return false;
-    }
-
-    const target = this.findBestSourceLineTarget(Math.floor(lineNumber));
-    if (!target) {
-      return false;
-    }
-
-    this.scrollPreviewToTarget(target);
-    const shouldSuppressPulse = options.suppressPulseIfStable === true && this.shouldSuppressEditorPulse(target);
-    if (!shouldSuppressPulse) {
-      this.highlightPreviewTarget(target);
-    }
-    this.rememberEditorPulseState(target);
-    return true;
+    return this.previewController.focusPreviewOnSourceLine(lineNumber, options);
   }
 
   /**
@@ -509,22 +328,7 @@ export class UIController {
    * Used for bidirectional scroll sync with the editor.
    */
   scrollPreviewToY(canvasY: number): void {
-    // Convert from unscaled canvas coordinates into the viewport's scaled scroll coordinates.
-    const scaledCanvasY = canvasY * this.getPreviewZoomLevel();
-
-    // Get the canvas container's offset from the viewport's scroll origin.
-    // This accounts for viewport padding.
-    const containerOffsetTop = this.previewContainer.offsetTop;
-
-    // The actual scroll position is: scaled canvas position + container offset.
-    // Subtract the focus offset so the target appears near the top with some breathing room.
-    const targetScrollTop = Math.max(0, containerOffsetTop + scaledCanvasY - this.previewFocusTopOffsetPx);
-
-    this.ignorePreviewScrollRevisionUntilMs = Date.now() + 850;
-    this.previewViewport.scrollTo({
-      top: targetScrollTop,
-      behavior: 'smooth',
-    });
+    this.previewController.scrollPreviewToY(canvasY);
   }
 
   /**
@@ -532,38 +336,7 @@ export class UIController {
    * Used to indicate which block corresponds to the editor cursor.
    */
   highlightCanvasRegion(y: number, height: number): void {
-    // Create overlay if it doesn't exist
-    if (!this.canvasHighlightOverlay) {
-      this.canvasHighlightOverlay = document.createElement('div');
-      this.canvasHighlightOverlay.className = 'canvas-highlight-overlay';
-      this.previewContainer.style.position = 'relative';
-      this.previewContainer.appendChild(this.canvasHighlightOverlay);
-    }
-
-    // Position the overlay
-    const overlay = this.canvasHighlightOverlay;
-    overlay.style.position = 'absolute';
-    overlay.style.left = '0';
-    overlay.style.right = '0';
-    overlay.style.top = `${y}px`;
-    overlay.style.height = `${Math.max(4, height)}px`;
-    overlay.style.pointerEvents = 'none';
-    overlay.style.zIndex = '10';
-    
-    // Reset animation
-    overlay.classList.remove('active');
-    void overlay.offsetWidth; // Force reflow
-    overlay.classList.add('active');
-
-    // Clear previous timer
-    if (this.canvasHighlightTimer) {
-      clearTimeout(this.canvasHighlightTimer);
-    }
-
-    // Remove highlight after animation
-    this.canvasHighlightTimer = setTimeout(() => {
-      overlay.classList.remove('active');
-    }, 1500);
+    this.previewController.highlightCanvasRegion(y, height);
   }
 
   renderDocumentList(items: DocumentListItem[]): void {
@@ -602,7 +375,7 @@ export class UIController {
       button.appendChild(pageCount);
 
       button.addEventListener('click', () => {
-        this.documentSelectCallback?.(item.id);
+        this.events.emit('document:select', { documentId: item.id });
       });
 
       const actions = document.createElement('div');
@@ -619,7 +392,7 @@ export class UIController {
         if (nextFilename === null) {
           return;
         }
-        this.documentRenameCallback?.(item.id, nextFilename);
+        this.events.emit('document:rename', { documentId: item.id, nextFilename });
       });
 
       const closeBtn = document.createElement('button');
@@ -629,7 +402,7 @@ export class UIController {
       closeBtn.setAttribute('aria-label', `Close ${item.filename}`);
       closeBtn.setAttribute('title', `Close ${item.filename}`);
       closeBtn.addEventListener('click', () => {
-        this.documentCloseCallback?.(item.id);
+        this.events.emit('document:close', { documentId: item.id });
       });
 
       actions.appendChild(renameBtn);
@@ -642,121 +415,38 @@ export class UIController {
   }
 
   openExportModal(context?: ExportModalContext): void {
-    if (this.isHelpModalOpen) {
-      this.closeHelpModal();
+    if (this.helpModal.getIsOpen()) {
+      this.helpModal.close();
     }
-
-    if (context) {
-      this.exportContext = this.normalizeExportContext(context);
-    } else if (this.exportContextRequestCallback) {
-      this.exportContext = this.normalizeExportContext(this.exportContextRequestCallback());
-    }
-
-    this.applyExportContext();
-    if (!this.isExporting) {
-      this.resetExportPanel();
-    }
-
-    this.exportModalBackdrop.hidden = false;
-    document.body.classList.add('export-modal-open');
-    this.isExportModalOpen = true;
-
-    requestAnimationFrame(() => {
-      if (this.isExporting) {
-        this.exportCancelBtn.focus();
-      } else if (!this.exportStartBtn.disabled) {
-        this.exportStartBtn.focus();
-      } else {
-        this.exportDismissBtn.focus();
-      }
-    });
+    this.exportModal.openWithContext(context);
   }
 
   closeExportModal(): void {
-    if (this.isExporting) {
-      return;
-    }
-
-    this.exportModalBackdrop.hidden = true;
-    document.body.classList.remove('export-modal-open');
-    this.isExportModalOpen = false;
+    this.exportModal.close();
   }
 
   setExportBusy(isBusy: boolean): void {
-    this.isExporting = isBusy;
-    const isApiAvailable = this.exportContext.isApiAvailable ?? true;
-
-    this.exportPdfBtn.disabled = isBusy;
-    this.exportStartBtn.disabled = isBusy || this.exportContext.totalFiles === 0 || !isApiAvailable;
-    this.exportCancelBtn.disabled = !isBusy;
-    this.exportDismissBtn.disabled = isBusy;
-    this.exportModalCloseBtn.disabled = isBusy;
-    this.exportScopeCurrent.disabled = isBusy || this.exportContext.totalFiles === 0 || !isApiAvailable;
-    this.exportScopeAll.disabled = isBusy || this.exportContext.totalFiles <= 1 || !isApiAvailable;
-
-    this.exportLog.setAttribute('aria-busy', isBusy ? 'true' : 'false');
-    this.exportModalBackdrop.classList.toggle('is-exporting', isBusy);
-
-    if (isBusy && !this.isExportModalOpen) {
-      this.openExportModal(this.exportContext);
-    }
+    this.exportModal.setBusy(isBusy);
   }
 
   updateExportAvailability(isApiAvailable: boolean): void {
-    this.exportContext.isApiAvailable = isApiAvailable;
-    
-    // If export modal is open, update it
-    if (this.isExportModalOpen) {
-      this.applyExportContext();
-      this.resetExportPanel();
-    }
+    this.exportModal.updateAvailability(isApiAvailable);
   }
 
   setExportProgress(update: ExportProgressUpdate): void {
-    const total = Math.max(0, Math.floor(update.total));
-    const processed = this.clamp(Math.floor(update.processed), 0, Math.max(0, total));
-    const percent = total === 0 ? 0 : Math.round((processed / total) * 100);
-
-    this.exportProgressText.textContent = update.message;
-    const timeParts: string[] = [];
-    if (typeof update.currentFileElapsedMs === 'number' && Number.isFinite(update.currentFileElapsedMs)) {
-      timeParts.push(`file ${this.formatDuration(update.currentFileElapsedMs)}`);
-    }
-    if (typeof update.totalElapsedMs === 'number' && Number.isFinite(update.totalElapsedMs)) {
-      timeParts.push(`total ${this.formatDuration(update.totalElapsedMs)}`);
-    }
-
-    this.exportProgressCount.textContent = timeParts.length > 0
-      ? `${processed} / ${total} | ${timeParts.join(' | ')}`
-      : `${processed} / ${total}`;
-    this.exportProgressBar.style.width = `${percent}%`;
-    this.exportProgressBar.setAttribute('aria-valuetext', `${processed} of ${total}`);
+    this.exportModal.setProgress(update);
   }
 
   setExportSummary(summary: string): void {
-    this.exportModalSummary.textContent = summary;
+    this.exportModal.setSummary(summary);
   }
 
   clearExportLog(): void {
-    this.exportLog.innerHTML = '';
+    this.exportModal.clearLog();
   }
 
   appendExportLog(message: string): void {
-    const nearBottom = this.exportLog.scrollHeight - this.exportLog.scrollTop - this.exportLog.clientHeight < 32;
-
-    const line = document.createElement('div');
-    line.className = 'export-log-line';
-
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    const ss = String(now.getSeconds()).padStart(2, '0');
-    line.textContent = `[${hh}:${mm}:${ss}] ${message}`;
-    this.exportLog.appendChild(line);
-
-    if (nearBottom) {
-      this.exportLog.scrollTop = this.exportLog.scrollHeight;
-    }
+    this.exportModal.appendLog(message);
   }
 
   /**
@@ -827,213 +517,43 @@ export class UIController {
       }
     });
 
-    this.exportPdfBtn.addEventListener('click', () => {
-      this.openExportModal();
-    });
-
-    this.exportStartBtn.addEventListener('click', () => {
-      this.exportStartCallback?.(this.getSelectedExportScope());
-    });
-
-    this.exportCancelBtn.addEventListener('click', () => {
-      this.exportCancelCallback?.();
-    });
-
-    this.exportScopeCurrent.addEventListener('change', () => {
-      if (!this.isExporting) {
-        this.resetExportPanel();
-      }
-    });
-
-    this.exportScopeAll.addEventListener('change', () => {
-      if (!this.isExporting) {
-        this.resetExportPanel();
-      }
-    });
-
-    this.exportDismissBtn.addEventListener('click', () => {
-      this.closeExportModal();
-    });
-
-    this.exportModalCloseBtn.addEventListener('click', () => {
-      this.closeExportModal();
-    });
-
-    this.exportModalBackdrop.addEventListener('click', (event) => {
-      if (event.target === this.exportModalBackdrop) {
-        this.closeExportModal();
-      }
-    });
-
-    this.helpModalBackdrop.addEventListener('click', (event) => {
-      if (event.target === this.helpModalBackdrop) {
-        this.closeHelpModal();
-      }
-    });
-
-    this.helpModalCloseBtn.addEventListener('click', () => {
-      this.closeHelpModal();
-    });
-
-    this.llmPromptCopyBtn.addEventListener('click', () => {
-      void this.copyLlmPromptHeader();
-    });
-
-    this.helpTopicNavBtns.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const topic = btn.dataset.topic;
-        if (topic) {
-          this.switchHelpTopic(topic);
-        }
-      });
-    });
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && this.isExportModalOpen && !this.isExporting) {
-        event.preventDefault();
-        this.closeExportModal();
-        return;
-      }
-
-      if (event.key === 'Escape' && this.isHelpModalOpen) {
-        event.preventDefault();
-        this.closeHelpModal();
-        return;
-      }
-
-      if (event.key === 'Escape' && this.isHfModalOpen) {
-        event.preventDefault();
-        this.closeHfModal();
-      }
-    });
-
-    this.sidebarToggleBtn.addEventListener('click', () => {
-      this.toggleSidebar();
-    });
-
-    this.mathToggleBtn.addEventListener('click', () => {
-      this.toggleMathMode();
-    });
+    // Export modal event handlers are managed by ExportModal class
+    // Help modal event handlers are managed by HelpModal class  
+    // Header/Footer modal event handlers are managed by HeaderFooterModal class
 
     this.fontSizeSelect.addEventListener('change', () => {
       this.applySettings();
-      this.settingsChangeCallback?.();
+      this.events.emit('settings:change');
     });
 
     this.marginSelect.addEventListener('change', () => {
       this.applySettings();
-      this.settingsChangeCallback?.();
+      this.events.emit('settings:change');
     });
 
     this.pageSizeSelect.addEventListener('change', () => {
       this.applySettings();
-      this.zoomMode = 'fit-width';
-      this.settingsChangeCallback?.();
+      this.previewController.setZoomModeFitWidth();
+      this.events.emit('settings:change');
     });
 
     this.emojiModeSelect.addEventListener('change', () => {
       this.applySettings();
-      this.settingsChangeCallback?.();
-    });
-
-    this.themeToggleBtn.addEventListener('click', () => {
-      this.toggleTheme();
+      this.events.emit('settings:change');
     });
 
     this.helpToggleBtn.addEventListener('click', () => {
-      this.openHelpModal();
+      this.helpModal.open();
     });
 
-    // Header/Footer modal event listeners
+    // Header/Footer modal - event handlers managed by HeaderFooterModal class
     this.headerFooterBtn.addEventListener('click', () => {
-      this.openHfModal();
+      this.hfModal.open();
     });
-
-    this.hfModalCloseBtn.addEventListener('click', () => {
-      this.closeHfModal();
-    });
-
-    this.hfCancelBtn.addEventListener('click', () => {
-      this.closeHfModal();
-    });
-
-    this.hfModalBackdrop.addEventListener('click', (event) => {
-      if (event.target === this.hfModalBackdrop) {
-        this.closeHfModal();
-      }
-    });
-
-    this.hfApplyBtn.addEventListener('click', () => {
-      this.applyHfSettings();
-      this.closeHfModal();
-    });
-
-    this.hfModeNone.addEventListener('change', () => this.updateHfSections());
-    this.hfModeAuto.addEventListener('change', () => this.updateHfSections());
-    this.hfModeManual.addEventListener('change', () => this.updateHfSections());
-
-    this.fitWidthBtn.addEventListener('click', () => {
-      this.zoomMode = 'fit-width';
-      this.refreshPreviewViewport();
-    });
-
-    this.fitPageBtn.addEventListener('click', () => {
-      this.zoomMode = 'fit-page';
-      this.refreshPreviewViewport();
-    });
-
-    this.zoomInBtn.addEventListener('click', () => {
-      this.zoomMode = 'manual';
-      this.zoomLevel = this.roundZoom(this.zoomLevel + this.zoomStep);
-      this.applyPreviewZoom();
-    });
-
-    this.zoomOutBtn.addEventListener('click', () => {
-      this.zoomMode = 'manual';
-      this.zoomLevel = this.roundZoom(this.zoomLevel - this.zoomStep);
-
-      const fitWidthZoom = this.calculateFitWidthZoom();
-      if (this.zoomLevel <= fitWidthZoom + 0.01) {
-        this.zoomMode = 'fit-width';
-      }
-
-      this.applyPreviewZoom();
-    });
-
-    this.previewViewport.addEventListener('wheel', (event) => {
-      if (!event.ctrlKey) {
-        return;
-      }
-
-      event.preventDefault();
-      const magnitude = Math.max(Math.abs(event.deltaY) * 0.0012, this.zoomStep / 2);
-      const direction = event.deltaY < 0 ? 1 : -1;
-
-      this.zoomMode = 'manual';
-      this.zoomLevel = this.roundZoom(this.zoomLevel + (direction * magnitude));
-
-      const fitWidthZoom = this.calculateFitWidthZoom();
-      if (this.zoomLevel <= fitWidthZoom + 0.01) {
-        this.zoomMode = 'fit-width';
-      }
-
-      this.applyPreviewZoom();
-    }, { passive: false });
-
-    this.previewViewport.addEventListener('scroll', () => {
-      if (Date.now() < this.ignorePreviewScrollRevisionUntilMs) {
-        return;
-      }
-      this.previewScrollRevision += 1;
-    }, { passive: true });
 
     this.markdownEditor.addEventListener('scroll', () => {
-      this.editorScrollRevision += 1;
+      this.previewController.incrementEditorScrollRevision();
     }, { passive: true });
-
-    this.previewContainer.addEventListener('click', (event) => {
-      this.handlePreviewSourceClick(event);
-    });
 
     this.paneDivider.addEventListener('pointerdown', (event) => {
       this.startDividerDrag(event);
@@ -1043,18 +563,8 @@ export class UIController {
       this.handleDividerKeyboard(event);
     });
 
-    this.sidebarDivider.addEventListener('pointerdown', (event) => {
-      this.startSidebarDividerDrag(event);
-    });
-
-    this.sidebarDivider.addEventListener('keydown', (event) => {
-      this.handleSidebarDividerKeyboard(event);
-    });
-
     window.addEventListener('pointermove', this.onDividerPointerMove);
     window.addEventListener('pointerup', this.onDividerPointerUp);
-    window.addEventListener('pointermove', this.onSidebarDividerPointerMove);
-    window.addEventListener('pointerup', this.onSidebarDividerPointerUp);
     window.addEventListener('resize', () => {
       this.refreshPreviewViewport();
     });
@@ -1072,233 +582,11 @@ export class UIController {
     root.style.setProperty('--page-height-mm', `${pageSize.heightMm}`);
   }
 
-  private initializeTheme(): void {
-    let storedTheme: string | null = null;
-
-    try {
-      storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-    } catch {
-      storedTheme = null;
-    }
-
-    const initialTheme: ThemeMode = storedTheme === 'light' ? 'light' : 'dark';
-    this.applyTheme(initialTheme);
-  }
-
-  private initializeSidebarWidth(): void {
-    let storedWidth: string | null = null;
-
-    try {
-      storedWidth = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-    } catch {
-      storedWidth = null;
-    }
-
-    if (!storedWidth) {
-      this.setSidebarWidth(this.sidebarWidthPx, false);
-      return;
-    }
-
-    const parsed = Number.parseFloat(storedWidth);
-    this.setSidebarWidth(Number.isFinite(parsed) ? parsed : this.sidebarWidthPx, false);
-  }
-
-  private applyTheme(theme: ThemeMode): void {
-    this.currentTheme = theme;
-    document.documentElement.dataset.theme = theme;
-
-    const nextTheme: ThemeMode = theme === 'dark' ? 'light' : 'dark';
-    const label = `Switch to ${nextTheme} theme`;
-    this.themeToggleBtn.setAttribute('aria-label', label);
-    this.themeToggleBtn.setAttribute('title', label);
-
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Ignore persistence errors.
-    }
-  }
-
-  private toggleTheme(): void {
-    const nextTheme: ThemeMode = this.currentTheme === 'dark' ? 'light' : 'dark';
-    this.applyTheme(nextTheme);
-  }
-
-  private openHelpModal(): void {
-    this.helpModalBackdrop.hidden = false;
-    document.body.classList.add('help-modal-open');
-    this.isHelpModalOpen = true;
-    this.resetLlmPromptCopyStatus();
-    this.helpModalBody.scrollTop = 0;
-    this.helpModalCloseBtn.focus();
-  }
-
-  private closeHelpModal(): void {
-    this.helpModalBackdrop.hidden = true;
-    document.body.classList.remove('help-modal-open');
-    this.isHelpModalOpen = false;
-    this.resetLlmPromptCopyStatus();
-  }
-
-  private switchHelpTopic(topicId: string): void {
-    // Update navigation buttons
-    this.helpTopicNavBtns.forEach((btn) => {
-      if (btn.dataset.topic === topicId) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
-    });
-
-    // Update topic pages
-    this.helpTopicPages.forEach((page) => {
-      if (page.dataset.topic === topicId) {
-        page.classList.add('active');
-      } else {
-        page.classList.remove('active');
-      }
-    });
-
-    // Scroll to top of content
-    this.helpModalBody.scrollTop = 0;
-  }
-
-  private async copyLlmPromptHeader(): Promise<void> {
-    const promptText = this.llmPromptText.textContent?.trim() ?? '';
-    if (!promptText) {
-      this.setLlmPromptCopyStatus('Prompt text unavailable.');
-      return;
-    }
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(promptText);
-      } else {
-        this.copyTextFallback(promptText);
-      }
-
-      this.setLlmPromptCopyStatus('Prompt copied.', true);
-    } catch (error) {
-      console.error('Failed to copy LLM prompt header:', error);
-      this.setLlmPromptCopyStatus('Copy failed. Use Ctrl+C.');
-    }
-  }
-
-  private copyTextFallback(text: string): void {
-    const fallbackTextarea = document.createElement('textarea');
-    fallbackTextarea.value = text;
-    fallbackTextarea.readOnly = true;
-    fallbackTextarea.style.position = 'fixed';
-    fallbackTextarea.style.left = '-9999px';
-    fallbackTextarea.style.top = '0';
-    document.body.appendChild(fallbackTextarea);
-    fallbackTextarea.select();
-    fallbackTextarea.setSelectionRange(0, fallbackTextarea.value.length);
-    const copied = document.execCommand('copy');
-    document.body.removeChild(fallbackTextarea);
-
-    if (!copied) {
-      throw new Error('Fallback clipboard copy failed');
-    }
-  }
-
-  private setLlmPromptCopyStatus(message: string, copied = false): void {
-    this.llmPromptCopyStatus.textContent = message;
-    this.llmPromptCopyBtn.textContent = copied ? 'Copied' : 'Copy';
-
-    if (this.llmPromptCopyStatusTimer !== null) {
-      window.clearTimeout(this.llmPromptCopyStatusTimer);
-    }
-
-    this.llmPromptCopyStatusTimer = window.setTimeout(() => {
-      this.resetLlmPromptCopyStatus();
-    }, 1800);
-  }
-
-  private resetLlmPromptCopyStatus(): void {
-    if (this.llmPromptCopyStatusTimer !== null) {
-      window.clearTimeout(this.llmPromptCopyStatusTimer);
-      this.llmPromptCopyStatusTimer = null;
-    }
-
-    this.llmPromptCopyStatus.textContent = '';
-    this.llmPromptCopyBtn.textContent = 'Copy';
-  }
-
-  private openHfModal(): void {
-    // Populate form with current settings
-    this.hfModeNone.checked = this.hfMode === 'none';
-    this.hfModeAuto.checked = this.hfMode === 'auto';
-    this.hfModeManual.checked = this.hfMode === 'manual';
-    
-    this.hfAutoSkipFirst.checked = this.hfConfig.skipFirstPage;
-    this.hfManualSkipFirst.checked = this.hfConfig.skipFirstPage;
-    this.hfHeaderLeft.value = this.hfConfig.headerLeft;
-    this.hfHeaderCenter.value = this.hfConfig.headerCenter;
-    this.hfHeaderRight.value = this.hfConfig.headerRight;
-    this.hfFooterLeft.value = this.hfConfig.footerLeft;
-    this.hfFooterCenter.value = this.hfConfig.footerCenter;
-    this.hfFooterRight.value = this.hfConfig.footerRight;
-    
-    this.updateHfSections();
-    
-    this.hfModalBackdrop.hidden = false;
-    document.body.classList.add('hf-modal-open');
-    this.isHfModalOpen = true;
-  }
-
-  private closeHfModal(): void {
-    this.hfModalBackdrop.hidden = true;
-    document.body.classList.remove('hf-modal-open');
-    this.isHfModalOpen = false;
-  }
-
-  private updateHfSections(): void {
-    if (this.hfModeNone.checked) {
-      this.hfAutoSection.hidden = true;
-      this.hfManualSection.hidden = true;
-    } else if (this.hfModeAuto.checked) {
-      this.hfAutoSection.hidden = false;
-      this.hfManualSection.hidden = true;
-    } else {
-      this.hfAutoSection.hidden = true;
-      this.hfManualSection.hidden = false;
-    }
-  }
-
-  private applyHfSettings(): void {
-    if (this.hfModeNone.checked) {
-      this.hfMode = 'none';
-      this.hfConfig.skipFirstPage = false;
-    } else if (this.hfModeAuto.checked) {
-      this.hfMode = 'auto';
-      this.hfConfig.skipFirstPage = this.hfAutoSkipFirst.checked;
-      // Auto mode: set predefined values
-      this.hfConfig.headerLeft = this.documentTitle;
-      this.hfConfig.headerCenter = '';
-      this.hfConfig.headerRight = '{{date}}';
-      this.hfConfig.footerLeft = '';
-      this.hfConfig.footerCenter = 'Page {{pageNumber}} of {{totalPages}}';
-      this.hfConfig.footerRight = '';
-    } else {
-      this.hfMode = 'manual';
-      this.hfConfig.skipFirstPage = this.hfManualSkipFirst.checked;
-      this.hfConfig.headerLeft = this.hfHeaderLeft.value;
-      this.hfConfig.headerCenter = this.hfHeaderCenter.value;
-      this.hfConfig.headerRight = this.hfHeaderRight.value;
-      this.hfConfig.footerLeft = this.hfFooterLeft.value;
-      this.hfConfig.footerCenter = this.hfFooterCenter.value;
-      this.hfConfig.footerRight = this.hfFooterRight.value;
-    }
-    
-    this.headerFooterChangeCallback?.();
-  }
-
   /**
    * Sets the document title for auto header/footer mode.
    */
   setDocumentTitle(title: string): void {
-    this.documentTitle = title;
+    this.hfModal.setDocumentTitle(title);
   }
 
   /**
@@ -1306,567 +594,18 @@ export class UIController {
    * Returns undefined if mode is 'none'.
    */
   getHeaderFooterConfig(): HeaderFooterConfig | undefined {
-    if (this.hfMode === 'none') {
-      return undefined;
-    }
-    
-    return {
-      header: {
-        left: this.hfConfig.headerLeft || undefined,
-        center: this.hfConfig.headerCenter || undefined,
-        right: this.hfConfig.headerRight || undefined,
-      },
-      footer: {
-        left: this.hfConfig.footerLeft || undefined,
-        center: this.hfConfig.footerCenter || undefined,
-        right: this.hfConfig.footerRight || undefined,
-      },
-      skipFirstPage: this.hfConfig.skipFirstPage,
-    };
+    return this.hfModal.getConfig();
   }
 
   /**
    * Sets the callback for header/footer changes.
    */
   onHeaderFooterChange(callback: () => void): void {
-    this.headerFooterChangeCallback = callback;
-  }
-
-  private toggleSidebar(): void {
-    this.isSidebarCollapsed = !this.isSidebarCollapsed;
-    this.workspaceShell.classList.toggle('sidebar-collapsed', this.isSidebarCollapsed);
-    if (this.isSidebarCollapsed) {
-      this.isDraggingSidebarDivider = false;
-      this.releaseDragStylesIfIdle();
-    }
-    this.updateSidebarToggleButton();
-
-    requestAnimationFrame(() => {
-      this.refreshPreviewViewport();
-    });
-  }
-
-  private updateSidebarToggleButton(): void {
-    this.sidebarToggleIcon.textContent = this.isSidebarCollapsed ? '>' : '<';
-    const label = this.isSidebarCollapsed ? 'Expand document list' : 'Collapse document list';
-    this.sidebarToggleBtn.setAttribute('aria-label', label);
-    this.sidebarToggleBtn.setAttribute('title', label);
-  }
-
-  private normalizeExportContext(context: ExportModalContext): ExportModalContext {
-    const activeFilename = (context.activeFilename || 'No active file').trim() || 'No active file';
-    const totalFiles = Math.max(0, Math.floor(context.totalFiles));
-    const isApiAvailable = context.isApiAvailable !== false;
-
-    return {
-      activeFilename,
-      totalFiles,
-      isApiAvailable,
-    };
-  }
-
-  private applyExportContext(): void {
-    const totalFiles = this.exportContext.totalFiles;
-    const isApiAvailable = this.exportContext.isApiAvailable ?? true;
-    
-    this.exportScopeCurrentLabel.textContent = `Current file (${this.exportContext.activeFilename})`;
-    this.exportScopeAllLabel.textContent = `All open files (${totalFiles})`;
-
-    const noDocuments = totalFiles === 0;
-    const disableAll = totalFiles <= 1;
-    const apiUnavailable = !isApiAvailable;
-    
-    this.exportScopeCurrent.disabled = noDocuments || this.isExporting || apiUnavailable;
-    this.exportScopeAll.disabled = disableAll || this.isExporting || apiUnavailable;
-    this.exportStartBtn.disabled = this.isExporting || noDocuments || apiUnavailable;
-    
-    if (disableAll && this.exportScopeAll.checked) {
-      this.exportScopeCurrent.checked = true;
-    }
-  }
-
-  private resetExportPanel(): void {
-    const isApiAvailable = this.exportContext.isApiAvailable ?? true;
-    const total = this.exportContext.totalFiles === 0
-      ? 0
-      : this.getSelectedExportScope() === 'all'
-        ? this.exportContext.totalFiles
-        : 1;
-
-    if (!isApiAvailable) {
-      this.setExportProgress({
-        processed: 0,
-        total: 0,
-        message: 'PDF export not available in static mode',
-      });
-      this.clearExportLog();
-      this.setExportSummary(
-        'PDF export is not available when running from static files. ' +
-        'To use PDF export, run the app with "pnpm dev" or deploy with a server that supports the export API.'
-      );
-      return;
-    }
-
-    this.setExportProgress({
-      processed: 0,
-      total,
-      message: total === 0 ? 'No markdown files loaded' : 'Ready to export',
-    });
-    this.clearExportLog();
-    this.setExportSummary(total === 0
-      ? 'Load or create at least one markdown file before exporting.'
-      : 'Choose what to export, then start. Progress updates will appear below while files are processed.');
-  }
-
-  private getSelectedExportScope(): ExportScope {
-    return this.exportScopeAll.checked ? 'all' : 'current';
-  }
-
-  private handlePreviewSourceClick(event: MouseEvent): void {
-    const clickedElement = this.toElement(event.target);
-    if (!clickedElement) {
-      return;
-    }
-
-    const anchor = this.findClickedSourceAnchor(clickedElement, event.clientY);
-    if (!anchor) {
-      return;
-    }
-
-    const lineNumber = this.estimateLineNumberFromAnchor(anchor, event.clientY);
-    this.highlightPreviewTarget(anchor);
-    this.previewSourceLineSelectCallback?.(lineNumber);
-  }
-
-  private findClickedSourceAnchor(clickedElement: HTMLElement, clickY: number): HTMLElement | null {
-    const directAnchor = clickedElement.closest('.source-line-anchor') as HTMLElement | null;
-    if (directAnchor) {
-      return directAnchor;
-    }
-
-    const page = clickedElement.closest('.page') as HTMLElement | null;
-    if (!page) {
-      return null;
-    }
-
-    const anchors = Array.from(page.querySelectorAll<HTMLElement>('.source-line-anchor[data-source-line-start]'));
-    if (anchors.length === 0) {
-      return null;
-    }
-
-    let bestAnchor: HTMLElement | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-
-    anchors.forEach((anchor) => {
-      const rect = anchor.getBoundingClientRect();
-      const distance = clickY < rect.top
-        ? rect.top - clickY
-        : clickY > rect.bottom
-          ? clickY - rect.bottom
-          : 0;
-
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestAnchor = anchor;
-      }
-    });
-
-    return bestAnchor;
-  }
-
-  private estimateLineNumberFromAnchor(anchor: HTMLElement, clickY: number): number {
-    const range = this.readSourceLineRange(anchor);
-    if (!range) {
-      return 1;
-    }
-
-    if (range.end <= range.start) {
-      return range.start;
-    }
-
-    const rect = anchor.getBoundingClientRect();
-    const height = Math.max(1, rect.height);
-    const relativeY = this.clamp((clickY - rect.top) / height, 0, 0.9999);
-    const span = (range.end - range.start) + 1;
-    const lineOffset = Math.floor(relativeY * span);
-    return range.start + lineOffset;
-  }
-
-  private toElement(target: EventTarget | null): HTMLElement | null {
-    if (target instanceof HTMLElement) {
-      return target;
-    }
-
-    if (target instanceof Text) {
-      return target.parentElement;
-    }
-
-    return null;
-  }
-
-  private findBestSourceLineTarget(lineNumber: number): HTMLElement | null {
-    const anchors = this.previewContainer.querySelectorAll<HTMLElement>('.source-line-anchor[data-source-line-start]');
-    if (anchors.length === 0) {
-      return null;
-    }
-
-    let bestTarget: HTMLElement | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    let bestRangeSize = Number.POSITIVE_INFINITY;
-    let hasExactMatch = false;
-
-    anchors.forEach((anchor) => {
-      const range = this.readSourceLineRange(anchor);
-      if (!range) {
-        return;
-      }
-
-      const isExactMatch = lineNumber >= range.start && lineNumber <= range.end;
-      const distance = isExactMatch
-        ? 0
-        : lineNumber < range.start
-          ? range.start - lineNumber
-          : lineNumber - range.end;
-      const rangeSize = Math.max(0, range.end - range.start);
-
-      if (isExactMatch && !hasExactMatch) {
-        hasExactMatch = true;
-        bestTarget = anchor;
-        bestDistance = distance;
-        bestRangeSize = rangeSize;
-        return;
-      }
-
-      if (isExactMatch && hasExactMatch) {
-        if (rangeSize < bestRangeSize) {
-          bestTarget = anchor;
-          bestRangeSize = rangeSize;
-        }
-        return;
-      }
-
-      if (!hasExactMatch && (distance < bestDistance || (distance === bestDistance && rangeSize < bestRangeSize))) {
-        bestTarget = anchor;
-        bestDistance = distance;
-        bestRangeSize = rangeSize;
-      }
-    });
-
-    return bestTarget;
-  }
-
-  private readSourceLineRange(element: HTMLElement): { start: number; end: number } | null {
-    const start = Number.parseInt(element.dataset.sourceLineStart || '', 10);
-    if (!Number.isFinite(start) || start < 1) {
-      return null;
-    }
-
-    const rawEnd = Number.parseInt(element.dataset.sourceLineEnd || '', 10);
-    const end = Number.isFinite(rawEnd) && rawEnd >= start ? rawEnd : start;
-
-    return { start, end };
-  }
-
-  private shouldSuppressEditorPulse(target: HTMLElement): boolean {
-    const previous = this.recentEditorPulseState;
-    if (!previous) {
-      return false;
-    }
-
-    const now = Date.now();
-    if ((now - previous.timestampMs) > PREVIEW_PULSE_SUPPRESSION_WINDOW_MS) {
-      return false;
-    }
-
-    const currentAnchorKey = this.getAnchorKey(target);
-    if (!currentAnchorKey || currentAnchorKey !== previous.anchorKey) {
-      return false;
-    }
-
-    return previous.previewScrollRevision === this.previewScrollRevision
-      && previous.editorScrollRevision === this.editorScrollRevision;
-  }
-
-  private rememberEditorPulseState(target: HTMLElement): void {
-    const anchorKey = this.getAnchorKey(target);
-    if (!anchorKey) {
-      this.recentEditorPulseState = null;
-      return;
-    }
-
-    this.recentEditorPulseState = {
-      anchorKey,
-      timestampMs: Date.now(),
-      previewScrollRevision: this.previewScrollRevision,
-      editorScrollRevision: this.editorScrollRevision,
-    };
-  }
-
-  private getAnchorKey(target: HTMLElement): string | null {
-    const range = this.readSourceLineRange(target);
-    if (!range) {
-      return null;
-    }
-
-    return `${range.start}:${range.end}`;
-  }
-
-  private scrollPreviewToTarget(target: HTMLElement): void {
-    const viewportRect = this.previewViewport.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-
-    const desiredTop = viewportRect.top + this.previewFocusTopOffsetPx;
-    const deltaY = targetRect.top - desiredTop;
-    const nextTop = Math.max(0, this.previewViewport.scrollTop + deltaY);
-
-    const leftGuide = viewportRect.left + this.previewFocusSidePaddingPx;
-    const rightGuide = viewportRect.right - this.previewFocusSidePaddingPx;
-    let deltaX = 0;
-
-    if (targetRect.left < leftGuide) {
-      deltaX = targetRect.left - leftGuide;
-    } else if (targetRect.right > rightGuide) {
-      deltaX = targetRect.right - rightGuide;
-    }
-
-    const nextLeft = Math.max(0, this.previewViewport.scrollLeft + deltaX);
-
-    this.ignorePreviewScrollRevisionUntilMs = Date.now() + 850;
-    this.previewViewport.scrollTo({
-      top: nextTop,
-      left: nextLeft,
-      behavior: 'smooth',
-    });
-  }
-
-  private highlightPreviewTarget(target: HTMLElement): void {
-    if (this.previewFocusTarget) {
-      this.previewFocusTarget.classList.remove('preview-line-focus');
-    }
-    if (this.previewFocusPage) {
-      this.previewFocusPage.classList.remove('preview-page-focus');
-    }
-
-    // Restart animation when selecting the same element repeatedly.
-    target.classList.remove('preview-line-focus');
-    void target.offsetWidth;
-    target.classList.add('preview-line-focus');
-
-    const page = target.closest('.page') as HTMLElement | null;
-    if (page) {
-      page.classList.remove('preview-page-focus');
-      void page.offsetWidth;
-      page.classList.add('preview-page-focus');
-    }
-
-    this.previewFocusTarget = target;
-    this.previewFocusPage = page;
-
-    if (this.previewFocusResetTimer !== null) {
-      window.clearTimeout(this.previewFocusResetTimer);
-    }
-
-    this.previewFocusResetTimer = window.setTimeout(() => {
-      if (this.previewFocusTarget) {
-        this.previewFocusTarget.classList.remove('preview-line-focus');
-      }
-      if (this.previewFocusPage) {
-        this.previewFocusPage.classList.remove('preview-page-focus');
-      }
-      this.previewFocusTarget = null;
-      this.previewFocusPage = null;
-      this.previewFocusResetTimer = null;
-    }, 1800);
-  }
-
-  private getViewportPaddingPx(): { left: number; right: number; top: number; bottom: number } {
-    const styles = getComputedStyle(this.previewViewport);
-    return {
-      left: parseFloat(styles.paddingLeft) || 0,
-      right: parseFloat(styles.paddingRight) || 0,
-      top: parseFloat(styles.paddingTop) || 0,
-      bottom: parseFloat(styles.paddingBottom) || 0,
-    };
-  }
-
-  private getViewportInnerSizePx(): { width: number; height: number } {
-    const padding = this.getViewportPaddingPx();
-    return {
-      width: Math.max(this.previewViewport.clientWidth - padding.left - padding.right, 120),
-      height: Math.max(this.previewViewport.clientHeight - padding.top - padding.bottom, 120),
-    };
-  }
-
-  private calculateFitWidthZoom(): number {
-    const pageSize = this.getBasePageSizePx();
-    const viewport = this.getViewportInnerSizePx();
-    const availableWidth = Math.max(viewport.width - (this.previewSideGapPx * 2), 180);
-    return this.clamp(availableWidth / pageSize.width, this.minZoom, this.maxZoom);
-  }
-
-  private calculateFitPageZoom(): number {
-    const pageSize = this.getBasePageSizePx();
-    const viewport = this.getViewportInnerSizePx();
-    const availableWidth = Math.max(viewport.width - (this.previewSideGapPx * 2), 180);
-    const availableHeight = Math.max(viewport.height - 8, 180);
-
-    const widthZoom = availableWidth / pageSize.width;
-    const heightZoom = availableHeight / pageSize.height;
-
-    return this.clamp(Math.min(widthZoom, heightZoom), this.minZoom, this.maxZoom);
-  }
-
-  private applyPreviewZoom(): void {
-    this.zoomLevel = this.clamp(this.zoomLevel, this.minZoom, this.maxZoom);
-
-    if (this.zoomMode === 'fit-width') {
-      this.zoomLevel = this.calculateFitWidthZoom();
-    } else if (this.zoomMode === 'fit-page') {
-      this.zoomLevel = this.calculateFitPageZoom();
-    }
-
-    this.previewContainer.style.transform = `scale(${this.zoomLevel})`;
-
-    const baseCanvas = this.getBaseCanvasSizePx();
-    const scaledWidth = Math.ceil(baseCanvas.width * this.zoomLevel);
-    const scaledHeight = Math.ceil(baseCanvas.height * this.zoomLevel);
-    const viewport = this.getViewportInnerSizePx();
-
-    const fitWidthZoom = this.calculateFitWidthZoom();
-    const hideHorizontalOverflow = this.zoomMode !== 'manual' || this.zoomLevel <= fitWidthZoom + 0.001;
-
-    if (hideHorizontalOverflow) {
-      this.previewViewport.classList.add('no-horizontal-scroll');
-      this.previewCanvasSizer.style.width = `${Math.max(viewport.width, 260)}px`;
-      this.previewViewport.scrollLeft = 0;
-    } else {
-      this.previewViewport.classList.remove('no-horizontal-scroll');
-      const minWidth = Math.max(viewport.width, 260);
-      const desiredWidth = scaledWidth + (this.previewSideGapPx * 2);
-      this.previewCanvasSizer.style.width = `${Math.max(desiredWidth, minWidth)}px`;
-    }
-
-    const minHeight = Math.max(viewport.height, 320);
-    this.previewCanvasSizer.style.height = `${Math.max(scaledHeight + 8, minHeight)}px`;
-
-    this.updatePreviewControlState();
-  }
-
-  private getBasePageSizePx(): { width: number; height: number } {
-    const page = this.previewContainer.querySelector('.page') as HTMLElement | null;
-    const selectedPage = this.getPageSizeSpec();
-
-    if (!page) {
-      return {
-        width: mmToPx(selectedPage.widthMm),
-        height: mmToPx(selectedPage.heightMm),
-      };
-    }
-
-    const width = page.offsetWidth || mmToPx(selectedPage.widthMm);
-    const height = page.offsetHeight || mmToPx(selectedPage.heightMm);
-
-    return {
-      width,
-      height,
-    };
-  }
-
-  private getBaseCanvasSizePx(): { width: number; height: number } {
-    const pageSize = this.getBasePageSizePx();
-
-    const width = Math.max(this.previewContainer.scrollWidth, pageSize.width);
-    const height = Math.max(this.previewContainer.scrollHeight, pageSize.height);
-
-    return {
-      width,
-      height,
-    };
-  }
-
-  private updatePreviewControlState(): void {
-    this.fitWidthBtn.classList.toggle('is-active', this.zoomMode === 'fit-width');
-    this.fitPageBtn.classList.toggle('is-active', this.zoomMode === 'fit-page');
-
-    this.zoomInBtn.disabled = this.zoomLevel >= this.maxZoom;
-    this.zoomOutBtn.disabled = this.zoomLevel <= this.minZoom;
-
-    const zoomPercent = Math.round(this.zoomLevel * 100);
-    this.zoomReadout.textContent = `${zoomPercent}%`;
-    this.zoomInBtn.setAttribute('title', `Zoom in (${zoomPercent}%)`);
-    this.zoomOutBtn.setAttribute('title', `Zoom out (${zoomPercent}%)`);
-  }
-
-  private roundZoom(value: number): number {
-    return Math.round(value * 100) / 100;
-  }
-
-  private startSidebarDividerDrag(event: PointerEvent): void {
-    if (this.isStackedLayout() || this.isSidebarCollapsed) {
-      return;
-    }
-
-    this.isDraggingSidebarDivider = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    this.updateSidebarWidthFromPointerX(event.clientX);
-  }
-
-  private handleSidebarDividerKeyboard(event: KeyboardEvent): void {
-    if (this.isStackedLayout() || this.isSidebarCollapsed) {
-      return;
-    }
-
-    let handled = true;
-
-    if (event.key === 'ArrowLeft') {
-      this.setSidebarWidth(this.sidebarWidthPx - 12);
-    } else if (event.key === 'ArrowRight') {
-      this.setSidebarWidth(this.sidebarWidthPx + 12);
-    } else if (event.key === 'Home') {
-      this.setSidebarWidth(this.minSidebarWidthPx);
-    } else if (event.key === 'End') {
-      this.setSidebarWidth(this.maxSidebarWidthPx);
-    } else {
-      handled = false;
-    }
-
-    if (handled) {
-      event.preventDefault();
-      this.refreshPreviewViewport();
-    }
-  }
-
-  private updateSidebarWidthFromPointerX(clientX: number): void {
-    const rect = this.workspaceShell.getBoundingClientRect();
-    if (rect.width <= 0) {
-      return;
-    }
-
-    const desiredWidth = clientX - rect.left;
-    this.setSidebarWidth(desiredWidth);
-    this.refreshPreviewViewport();
-  }
-
-  private setSidebarWidth(widthPx: number, persist = true): void {
-    const clamped = Math.round(this.clamp(widthPx, this.minSidebarWidthPx, this.maxSidebarWidthPx));
-    this.sidebarWidthPx = clamped;
-    document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
-    this.sidebarDivider.setAttribute('aria-valuenow', String(clamped));
-
-    if (!persist) {
-      return;
-    }
-
-    try {
-      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped));
-    } catch {
-      // Ignore persistence errors.
-    }
+    this.hfModal.onApply(callback);
   }
 
   private releaseDragStylesIfIdle(): void {
-    if (this.isDraggingDivider || this.isDraggingSidebarDivider) {
+    if (this.isDraggingDivider || this.sidebarController.getIsDragging()) {
       return;
     }
 
@@ -1921,7 +660,7 @@ export class UIController {
   }
 
   private setSplitPercent(percent: number): void {
-    this.splitPercent = this.clamp(percent, this.minSplitPercent, this.maxSplitPercent);
+    this.splitPercent = clamp(percent, this.minSplitPercent, this.maxSplitPercent);
     document.documentElement.style.setProperty('--split-ratio', `${this.splitPercent}%`);
     this.paneDivider.setAttribute('aria-valuenow', String(Math.round(this.splitPercent)));
   }
@@ -1948,7 +687,7 @@ export class UIController {
     try {
       const loadedFiles = await Promise.all(markdownFiles.map((file) => this.readSingleFile(file)));
       if (loadedFiles.length > 0) {
-        this.fileUploadCallback?.(loadedFiles);
+        this.events.emit('file:upload', { files: loadedFiles });
       }
 
       const message = loadedFiles.length === 1
@@ -2003,17 +742,6 @@ export class UIController {
     }
   }
 
-  private toggleMathMode(): void {
-    const newMode: MathRenderMode = this.currentMathMode === 'html' ? 'svg' : 'html';
-    this.setMathMode(newMode);
-
-    this.mathModeChangeCallback?.(newMode);
-  }
-
-  private updateMathToggleButton(): void {
-    this.mathToggleBtn.textContent = `Math: ${this.currentMathMode.toUpperCase()}`;
-  }
-
   private setupDragAndDrop(): void {
     const app = document.getElementById('app');
     if (!app) {
@@ -2034,26 +762,5 @@ export class UIController {
 
       void this.readFiles(files);
     });
-  }
-
-  private formatDuration(milliseconds: number): string {
-    const safeMs = Math.max(0, milliseconds);
-    const totalSeconds = safeMs / 1000;
-
-    if (totalSeconds < 60) {
-      return `${totalSeconds.toFixed(1)}s`;
-    }
-
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds - (minutes * 60);
-    return `${minutes}m ${seconds.toFixed(1)}s`;
-  }
-
-  private clamp(value: number, min: number, max: number): number {
-    if (!Number.isFinite(value)) {
-      return min;
-    }
-
-    return Math.min(max, Math.max(min, value));
   }
 }

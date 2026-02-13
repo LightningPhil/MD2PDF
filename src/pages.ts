@@ -11,6 +11,7 @@ import {
   type EmojiMode,
   type SourceMappingEntry,
 } from './typesetter.js';
+import { clamp } from './utils/math.js';
 
 const DEFAULT_MARGIN_MM = 20;
 const DEFAULT_FONT_SIZE_PX = 12;
@@ -517,10 +518,10 @@ export class PageManager {
 
       const halfHeightPt = heightPt * 0.5;
       const maxCenterPt = Math.max(halfHeightPt, totalDocumentHeightPt - halfHeightPt);
-      centerPt = this.clamp(centerPt, halfHeightPt, maxCenterPt);
+      centerPt = clamp(centerPt, halfHeightPt, maxCenterPt);
 
-      const documentStartPt = this.clamp(centerPt - halfHeightPt, 0, totalDocumentHeightPt);
-      let documentEndPt = this.clamp(centerPt + halfHeightPt, documentStartPt, totalDocumentHeightPt);
+      const documentStartPt = clamp(centerPt - halfHeightPt, 0, totalDocumentHeightPt);
+      let documentEndPt = clamp(centerPt + halfHeightPt, documentStartPt, totalDocumentHeightPt);
       if (documentEndPt <= documentStartPt) {
         documentEndPt = documentStartPt + 0.25;
       }
@@ -560,18 +561,18 @@ export class PageManager {
   ): SourceLineCandidate[][] {
     const candidatesByLine = Array.from({ length: sourceLineCount + 1 }, () => [] as SourceLineCandidate[]);
     for (const entry of this.sourceMapping) {
-      const safePageIndex = this.clamp(
+      const safePageIndex = clamp(
         Math.floor(entry.pageIndex),
         0,
         this.pages.length - 1,
       );
       const pageHeightPt = Math.max(1, this.pages[safePageIndex]?.heightPt ?? 1);
       const pageOffsetPt = pageOffsetsPt[safePageIndex] ?? this.getPageDocumentOffsetPt(safePageIndex);
-      const entryYStartPt = this.clamp(Math.min(entry.yStartPt, entry.yEndPt), 0, pageHeightPt);
-      const entryYEndPt = this.clamp(Math.max(entry.yStartPt, entry.yEndPt), entryYStartPt, pageHeightPt);
+      const entryYStartPt = clamp(Math.min(entry.yStartPt, entry.yEndPt), 0, pageHeightPt);
+      const entryYEndPt = clamp(Math.max(entry.yStartPt, entry.yEndPt), entryYStartPt, pageHeightPt);
 
-      const safeLineStart = this.clamp(Math.floor(entry.sourceLineStart), 1, sourceLineCount);
-      const safeLineEnd = this.clamp(
+      const safeLineStart = clamp(Math.floor(entry.sourceLineStart), 1, sourceLineCount);
+      const safeLineEnd = clamp(
         Math.floor(entry.sourceLineEnd),
         safeLineStart,
         sourceLineCount,
@@ -631,13 +632,13 @@ export class PageManager {
       Number.NEGATIVE_INFINITY,
     );
     const sourceSpan = Math.max(1, maxSourceLine - minSourceLine);
-    const clampedLine = this.clamp(Math.floor(lineNumber), minSourceLine, maxSourceLine);
+    const clampedLine = clamp(Math.floor(lineNumber), minSourceLine, maxSourceLine);
     const normalized = (clampedLine - minSourceLine) / sourceSpan;
     const orderedByY = mostSpecificCandidates
       .slice()
       .sort((a, b) => a.documentStartPt - b.documentStartPt);
     const selectedIndex = Math.round(normalized * (orderedByY.length - 1));
-    return orderedByY[this.clamp(selectedIndex, 0, orderedByY.length - 1)];
+    return orderedByY[clamp(selectedIndex, 0, orderedByY.length - 1)];
   }
 
   private resolveLineBox(lineNumber: number): SourceLineBox | null {
@@ -645,7 +646,7 @@ export class PageManager {
       return null;
     }
 
-    const clampedLine = this.clamp(
+    const clampedLine = clamp(
       Math.floor(lineNumber),
       1,
       this.sourceLineBoxes.length,
@@ -739,7 +740,7 @@ export class PageManager {
       if (yPt <= pageEndPt) {
         return {
           pageIndex,
-          yOnPagePt: this.clamp(yPt - pageStartPt, 0, pageHeightPt),
+          yOnPagePt: clamp(yPt - pageStartPt, 0, pageHeightPt),
         };
       }
 
@@ -784,9 +785,5 @@ export class PageManager {
     }
 
     return offsetPt;
-  }
-
-  private clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
   }
 }

@@ -1,32 +1,24 @@
 import JSZip from 'jszip';
 import { MarkdownEditor } from './editor.js';
 import { PageManager } from './pages.js';
+import { downloadFile } from './utils/dom.js';
 import type { PageSizeKey } from './typesetter.js';
 import {
   UIController,
   type DocumentListItem,
   type ExportModalContext,
   type ExportScope,
-  type UploadedMarkdownFile,
 } from './ui.js';
-
-interface ManagedDocument {
-  id: string;
-  filename: string;
-  content: string;
-  pageCount: number;
-}
+import { DocumentService } from './services/index.js';
 
 class MD2PDFApp {
   private editor!: MarkdownEditor;
   private pageManager!: PageManager;
   private ui!: UIController;
+  private documentService!: DocumentService;
 
-  private documents: ManagedDocument[] = [];
-  private activeDocumentId: string | null = null;
   private isSwitchingDocument = false;
   private isExporting = false;
-  private untitledCounter = 1;
   private previewSyncTimeout: number | null = null;
 
   constructor() {
@@ -34,6 +26,7 @@ class MD2PDFApp {
       this.editor = new MarkdownEditor('markdownEditor');
       this.pageManager = new PageManager('previewContainer');
       this.ui = new UIController();
+      this.documentService = new DocumentService();
 
       this.initializeDocuments();
       this.setupEventHandlers();
@@ -55,11 +48,11 @@ class MD2PDFApp {
         return;
       }
 
-      let active = this.getActiveDocument();
+      let active = this.documentService.getActive();
       if (!active && content.trim()) {
-        active = this.createDocument(this.nextUntitledFilename(), content);
-        this.documents.push(active);
-        this.activeDocumentId = active.id;
+        active = this.documentService.createDocument(this.documentService.nextUntitledFilename(), content);
+        this.documentService.addDocument(active);
+        this.documentService.setActiveId(active.id);
       }
 
       if (!active) {
@@ -69,7 +62,7 @@ class MD2PDFApp {
         return;
       }
 
-      active.content = content;
+      this.documentService.updateContent(active.id, content);
       this.renderActiveDocument();
       this.refreshDocumentList();
     });
@@ -92,10 +85,10 @@ class MD2PDFApp {
 
     this.ui.onFileSave(() => {
       this.syncActiveDocumentContentFromEditor();
-      const active = this.getActiveDocument();
+      const active = this.documentService.getActive();
       return {
         content: active?.content ?? '',
-        filename: active ? this.ensureMarkdownFilename(active.filename) : 'document.md',
+        filename: active ? this.documentService.ensureMarkdownFilename(active.filename) : 'document.md',
       };
     });
 
@@ -103,15 +96,6 @@ class MD2PDFApp {
 
     this.ui.onExportStart((scope) => {
       void this.exportDocuments(scope);
-    });
-
-    this.ui.onExportCancel(() => {
-      // Client-side export is fast, no cancel needed
-    });
-
-    // Math mode is now handled by typesetter, no separate toggle needed
-    this.ui.onMathModeChange(() => {
-      // No-op - typesetter handles math natively
     });
 
     this.ui.onSettingsChange(() => {
@@ -165,40 +149,36 @@ class MD2PDFApp {
   private initializeDocuments(): void {
     const initialContent = this.editor.getContent();
     if (initialContent.trim()) {
-      const initialDocument = this.createDocument(this.nextUntitledFilename(), initialContent);
-      this.documents = [initialDocument];
-      this.activeDocumentId = initialDocument.id;
+      const initialDocument = this.documentService.createDocument(
+        this.documentService.nextUntitledFilename(),
+        initialContent
+      );
+      this.documentService.addDocument(initialDocument);
+      this.documentService.setActiveId(initialDocument.id);
       return;
     }
 
-    this.documents = [];
-    this.activeDocumentId = null;
+    this.documentService.clear();
   }
 
-  private addUploadedDocuments(files: UploadedMarkdownFile[]): void {
+  private addUploadedDocuments(files: { filename: string; content: string }[]): void {
     if (files.length === 0) {
       return;
     }
 
     this.syncActiveDocumentContentFromEditor();
 
-    const addedDocuments: ManagedDocument[] = [];
-    files.forEach((file) => {
-      const uniqueName = this.makeUniqueFilename(file.filename);
-      const document = this.createDocument(uniqueName, file.content);
-      this.documents.push(document);
-      addedDocuments.push(document);
-    });
+    const result = this.documentService.addUploadedFiles(files);
 
-    if (addedDocuments.length > 0) {
-      this.switchActiveDocument(addedDocuments[0].id, true);
+    if (result.firstDocumentId) {
+      this.switchActiveDocument(result.firstDocumentId, true);
       void this.recomputeInactivePageCounts();
       this.refreshDocumentList();
     }
   }
 
   private switchActiveDocument(documentId: string, skipSync = false): void {
-    const target = this.getDocumentById(documentId);
+    const target = this.documentService.getById(documentId);
     if (!target) {
       return;
     }
@@ -207,7 +187,7 @@ class MD2PDFApp {
       this.syncActiveDocumentContentFromEditor();
     }
 
-    this.activeDocumentId = target.id;
+    this.documentService.setActiveId(target.id);
 
     this.isSwitchingDocument = true;
     this.editor.setContent(target.content);
@@ -222,44 +202,35 @@ class MD2PDFApp {
   }
 
   private renameDocument(documentId: string, requestedFilename: string): void {
-    const target = this.getDocumentById(documentId);
-    if (!target) {
+    const result = this.documentService.renameDocument(documentId, requestedFilename);
+    
+    if (!result.success) {
+      if (result.error) {
+        this.showError(result.error);
+      }
       return;
     }
 
-    const trimmed = (requestedFilename || '').trim();
-    if (!trimmed) {
-      this.showError('Filename cannot be empty');
-      return;
-    }
-
-    const normalized = this.ensureMarkdownFilename(trimmed);
-    const unique = this.makeUniqueFilename(normalized, target.id);
-    if (unique === target.filename) {
-      return;
-    }
-
-    target.filename = unique;
     this.refreshDocumentList();
-    this.ui.showNotification(`Renamed to ${unique}`, 'success');
+    if (result.newName) {
+      this.ui.showNotification(`Renamed to ${result.newName}`, 'success');
+    }
   }
 
   private closeDocument(documentId: string): void {
-    const closingIndex = this.documents.findIndex((doc) => doc.id === documentId);
-    if (closingIndex < 0) {
-      return;
-    }
-
-    const closingDocument = this.documents[closingIndex];
-    if (closingDocument.id === this.activeDocumentId) {
+    // Sync before closing if this is the active document
+    const closingDoc = this.documentService.getById(documentId);
+    if (closingDoc && closingDoc.id === this.documentService.getActiveId()) {
       this.syncActiveDocumentContentFromEditor();
     }
 
-    this.documents.splice(closingIndex, 1);
+    const result = this.documentService.removeDocument(documentId);
+    
+    if (!result.closed) {
+      return;
+    }
 
-    if (this.documents.length === 0) {
-      this.activeDocumentId = null;
-
+    if (result.isEmpty) {
       this.isSwitchingDocument = true;
       this.editor.setContent('');
       this.isSwitchingDocument = false;
@@ -267,28 +238,27 @@ class MD2PDFApp {
       void this.pageManager.updateMarkdown('');
       this.ui.refreshPreviewViewport();
       this.refreshDocumentList();
-      this.ui.showNotification(`Closed ${closingDocument.filename}`, 'info');
+      this.ui.showNotification(`Closed ${result.closed.filename}`, 'info');
       return;
     }
 
-    if (closingDocument.id === this.activeDocumentId) {
-      const replacementIndex = Math.min(closingIndex, this.documents.length - 1);
-      const replacement = this.documents[replacementIndex];
-      this.activeDocumentId = replacement.id;
-
-      this.isSwitchingDocument = true;
-      this.editor.setContent(replacement.content);
-      this.isSwitchingDocument = false;
-
-      this.renderActiveDocument();
+    // If we closed the active doc, switch to the next one
+    if (result.nextActiveId && result.nextActiveId !== documentId) {
+      const replacement = this.documentService.getById(result.nextActiveId);
+      if (replacement) {
+        this.isSwitchingDocument = true;
+        this.editor.setContent(replacement.content);
+        this.isSwitchingDocument = false;
+        this.renderActiveDocument();
+      }
     }
 
     this.refreshDocumentList();
-    this.ui.showNotification(`Closed ${closingDocument.filename}`, 'info');
+    this.ui.showNotification(`Closed ${result.closed.filename}`, 'info');
   }
 
   private renderActiveDocument(): void {
-    const active = this.getActiveDocument();
+    const active = this.documentService.getActive();
     if (!active) {
       void this.pageManager.updateMarkdown('');
       this.ui.refreshPreviewViewport();
@@ -296,7 +266,7 @@ class MD2PDFApp {
     }
 
     void this.pageManager.updateMarkdown(active.content).then(() => {
-      active.pageCount = this.pageManager.getPageCount();
+      this.documentService.updatePageCount(active.id, this.pageManager.getPageCount());
       this.ui.refreshPreviewViewport();
       this.refreshDocumentList();
       this.schedulePreviewSync(this.editor.getCurrentLineNumber(), false);
@@ -331,119 +301,50 @@ class MD2PDFApp {
   }
 
   private async recomputeInactivePageCounts(): Promise<void> {
-    const activeId = this.activeDocumentId;
+    const activeId = this.documentService.getActiveId();
+    const allDocs = this.documentService.getAll();
 
-    for (const doc of this.documents) {
+    for (const doc of allDocs) {
       if (doc.id === activeId) {
         continue;
       }
 
-      doc.pageCount = await this.pageManager.calculatePageCount(doc.content);
+      const pageCount = await this.pageManager.calculatePageCount(doc.content);
+      this.documentService.updatePageCount(doc.id, pageCount);
     }
 
     this.refreshDocumentList();
   }
 
   private refreshDocumentList(): void {
-    const items: DocumentListItem[] = this.documents.map((doc) => ({
-      id: doc.id,
-      filename: doc.filename,
-      pageCount: Math.max(1, doc.pageCount),
-      isActive: doc.id === this.activeDocumentId,
+    const items: DocumentListItem[] = this.documentService.toListItems().map((item) => ({
+      ...item,
+      pageCount: Math.max(1, item.pageCount),
     }));
 
     this.ui.renderDocumentList(items);
   }
 
   private buildExportModalContext(): ExportModalContext {
-    const active = this.getActiveDocument();
+    const active = this.documentService.getActive();
     return {
       activeFilename: active?.filename ?? 'No active file',
-      totalFiles: Math.max(0, this.documents.length),
+      totalFiles: Math.max(0, this.documentService.getCount()),
       isApiAvailable: true, // Always available now
     };
   }
 
-  private getActiveDocument(): ManagedDocument | undefined {
-    if (!this.activeDocumentId) {
-      return undefined;
-    }
-
-    return this.documents.find((doc) => doc.id === this.activeDocumentId);
-  }
-
-  private getDocumentById(documentId: string): ManagedDocument | undefined {
-    return this.documents.find((doc) => doc.id === documentId);
-  }
-
   private syncActiveDocumentContentFromEditor(): void {
-    const active = this.getActiveDocument();
+    const active = this.documentService.getActive();
     if (!active) {
       return;
     }
 
-    active.content = this.editor.getContent();
-  }
-
-  private createDocument(filename: string, content: string): ManagedDocument {
-    return {
-      id: this.createDocumentId(),
-      filename,
-      content,
-      pageCount: 1,
-    };
-  }
-
-  private createDocumentId(): string {
-    return `doc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  }
-
-  private nextUntitledFilename(): string {
-    const filename = this.untitledCounter === 1 ? 'Untitled.md' : `Untitled-${this.untitledCounter}.md`;
-    this.untitledCounter += 1;
-    return filename;
-  }
-
-  private makeUniqueFilename(requestedFilename: string, excludeDocumentId: string | null = null): string {
-    const normalized = this.ensureMarkdownFilename(requestedFilename || this.nextUntitledFilename());
-
-    const extension = pathExtension(normalized);
-    const stem = normalized.slice(0, normalized.length - extension.length);
-
-    let candidate = normalized;
-    let counter = 1;
-
-    const used = new Set(
-      this.documents
-        .filter((doc) => doc.id !== excludeDocumentId)
-        .map((doc) => doc.filename.toLowerCase()),
-    );
-    while (used.has(candidate.toLowerCase())) {
-      counter += 1;
-      candidate = `${stem} (${counter})${extension}`;
-    }
-
-    return candidate;
-  }
-
-  private ensureMarkdownFilename(filename: string): string {
-    const trimmed = (filename || '').trim();
-    if (!trimmed) {
-      return this.nextUntitledFilename();
-    }
-
-    if (/\.(md|markdown)$/i.test(trimmed)) {
-      return trimmed;
-    }
-
-    return `${trimmed}.md`;
+    this.documentService.updateContent(active.id, this.editor.getContent());
   }
 
   private toPdfFilename(filename: string): string {
-    const markdownName = this.ensureMarkdownFilename(filename);
-    const extension = pathExtension(markdownName);
-    const stem = markdownName.slice(0, markdownName.length - extension.length);
-    return `${stem}.pdf`;
+    return this.documentService.toPdfFilename(filename);
   }
 
   private async exportDocuments(scope: ExportScope): Promise<void> {
@@ -453,7 +354,7 @@ class MD2PDFApp {
 
     this.syncActiveDocumentContentFromEditor();
 
-    const active = this.getActiveDocument();
+    const active = this.documentService.getActive();
     if (scope === 'current' && !active) {
       this.showError('No active markdown file to export');
       return;
@@ -461,7 +362,7 @@ class MD2PDFApp {
 
     const documentsToExport = scope === 'current'
       ? [active!]
-      : this.documents;
+      : [...this.documentService.getAll()];
 
     if (documentsToExport.length === 0) {
       this.showError('No markdown files to export');
@@ -495,7 +396,7 @@ class MD2PDFApp {
         const pdfBytes = await this.pageManager.exportPdf(doc.filename);
         
         const filename = this.toPdfFilename(doc.filename);
-        this.downloadPdf(pdfBytes, filename);
+        downloadFile(pdfBytes, filename, 'application/pdf');
 
         this.ui.appendExportLog(`Downloaded ${filename}`);
         this.ui.setExportProgress({
@@ -529,7 +430,7 @@ class MD2PDFApp {
 
         this.ui.appendExportLog('Creating zip archive...');
         const zipBlob = await zip.generateAsync({ type: 'blob' });
-        this.downloadBlob(zipBlob, 'markdown-export.zip');
+        downloadFile(zipBlob, 'markdown-export.zip');
 
         this.ui.setExportSummary(`Finished exporting ${totalFiles} files as zip.`);
         this.ui.showNotification(`Exported ${totalFiles} files as zip`, 'success');
@@ -548,48 +449,9 @@ class MD2PDFApp {
     }
   }
 
-  private downloadPdf(pdfBytes: Uint8Array, filename: string): void {
-    const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.style.display = 'none';
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
-  }
-
-  private downloadBlob(blob: Blob, filename: string): void {
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.style.display = 'none';
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
-  }
-
   private showError(message: string): void {
     this.ui.showNotification(message, 'error');
   }
-}
-
-function pathExtension(filename: string): string {
-  const dotIndex = filename.lastIndexOf('.');
-  if (dotIndex <= 0 || dotIndex === filename.length - 1) {
-    return '.md';
-  }
-  return filename.slice(dotIndex);
 }
 
 // Wait for DOM to be loaded before initializing the app

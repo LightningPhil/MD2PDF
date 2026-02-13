@@ -344,6 +344,23 @@ export type TypesetDiagnostics = {
 };
 
 /**
+ * Entry mapping a source line range to a rendered Y position.
+ * Used for bidirectional editor-preview synchronization.
+ */
+export type SourceMappingEntry = {
+  /** First source line (1-based) */
+  sourceLineStart: number;
+  /** Last source line (1-based, inclusive) */
+  sourceLineEnd: number;
+  /** Zero-based page index */
+  pageIndex: number;
+  /** Y position at top of rendered content (points from page top) */
+  yStartPt: number;
+  /** Y position at bottom of rendered content (points from page top) */
+  yEndPt: number;
+};
+
+/**
  * Result of the typesetting process.
  */
 export type TypesetResult = {
@@ -351,6 +368,8 @@ export type TypesetResult = {
   pages: PageLayout[];
   /** Diagnostic information (warnings, errors, timings) */
   diagnostics: TypesetDiagnostics;
+  /** Source line to rendered position mapping for editor sync */
+  sourceMapping?: SourceMappingEntry[];
 };
 
 /**
