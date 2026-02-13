@@ -26,10 +26,6 @@ export class UIController {
   private saveBtn: HTMLButtonElement;
   private exportPdfBtn: HTMLButtonElement;
   private uploadInput: HTMLInputElement;
-  private fontSizeSelect: HTMLSelectElement;
-  private marginSelect: HTMLSelectElement;
-  private pageSizeSelect: HTMLSelectElement;
-  private emojiModeSelect: HTMLSelectElement;
   private clickSyncModeSelect: HTMLSelectElement;
 
   private helpToggleBtn: HTMLButtonElement;
@@ -85,10 +81,6 @@ export class UIController {
     this.saveBtn = this.requireElement<HTMLButtonElement>('saveBtn');
     this.exportPdfBtn = this.requireElement<HTMLButtonElement>('exportPdfBtn');
     this.uploadInput = this.requireElement<HTMLInputElement>('uploadFile');
-    this.fontSizeSelect = this.requireElement<HTMLSelectElement>('fontSizeSelect');
-    this.marginSelect = this.requireElement<HTMLSelectElement>('marginSelect');
-    this.pageSizeSelect = this.requireElement<HTMLSelectElement>('pageSizeSelect');
-    this.emojiModeSelect = this.requireElement<HTMLSelectElement>('emojiModeSelect');
     this.clickSyncModeSelect = this.requireElement<HTMLSelectElement>('clickSyncModeSelect');
 
     // Theme controller is self-contained, no need to store reference
@@ -199,6 +191,9 @@ export class UIController {
     const settingsModalElements: SettingsModalElements = {
       backdrop: this.requireElement<HTMLElement>('settingsModalBackdrop'),
       closeBtn: this.requireElement<HTMLButtonElement>('settingsModalCloseBtn'),
+      pageSize: this.requireElement<HTMLSelectElement>('settingsPageSize'),
+      margin: this.requireElement<HTMLSelectElement>('settingsMargin'),
+      emojiMode: this.requireElement<HTMLSelectElement>('settingsEmojiMode'),
       baseFontSize: this.requireElement<HTMLInputElement>('settingsBaseFontSize'),
       h1Scale: this.requireElement<HTMLInputElement>('settingsH1Scale'),
       h2Scale: this.requireElement<HTMLInputElement>('settingsH2Scale'),
@@ -293,10 +288,10 @@ export class UIController {
   }
 
   /**
-   * Gets the selected page size key.
+   * Gets the selected page size key from settings.
    */
   getPageSize(): PageSizeKey {
-    const key = this.pageSizeSelect.value as PageSizeKey;
+    const key = this.settingsModal.getSettings().pageSize as PageSizeKey;
     if (PAGE_SIZES[key]) {
       return key;
     }
@@ -311,16 +306,25 @@ export class UIController {
     return PAGE_SIZES[this.getPageSize()];
   }
 
+  /**
+   * Gets the current font size from typography settings (in points, used as pixels for rendering).
+   */
   getFontSize(): number {
-    return parseInt(this.fontSizeSelect.value || '12', 10);
+    return this.settingsModal.getSettings().baseFontSizePt;
   }
 
+  /**
+   * Gets the current margin from settings.
+   */
   getMargin(): number {
-    return parseFloat(this.marginSelect.value || '20');
+    return this.settingsModal.getSettings().marginMm;
   }
 
+  /**
+   * Gets the current emoji mode from settings.
+   */
   getEmojiMode(): EmojiMode {
-    return this.emojiModeSelect.value === 'suppress' ? 'suppress' : 'preserve';
+    return this.settingsModal.getSettings().emojiMode;
   }
 
   getClickSyncMode(): 'always' | 'ctrl' | 'off' {
@@ -435,7 +439,7 @@ export class UIController {
       const renameBtn = document.createElement('button');
       renameBtn.type = 'button';
       renameBtn.className = 'document-item-action';
-      renameBtn.textContent = 'R';
+      renameBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
       renameBtn.setAttribute('aria-label', `Rename ${item.filename}`);
       renameBtn.setAttribute('title', `Rename ${item.filename}`);
       renameBtn.addEventListener('click', () => {
@@ -571,27 +575,6 @@ export class UIController {
     // Export modal event handlers are managed by ExportModal class
     // Help modal event handlers are managed by HelpModal class  
     // Header/Footer modal event handlers are managed by HeaderFooterModal class
-
-    this.fontSizeSelect.addEventListener('change', () => {
-      this.applySettings();
-      this.events.emit('settings:change');
-    });
-
-    this.marginSelect.addEventListener('change', () => {
-      this.applySettings();
-      this.events.emit('settings:change');
-    });
-
-    this.pageSizeSelect.addEventListener('change', () => {
-      this.applySettings();
-      this.previewController.setZoomModeFitWidth();
-      this.events.emit('settings:change');
-    });
-
-    this.emojiModeSelect.addEventListener('change', () => {
-      this.applySettings();
-      this.events.emit('settings:change');
-    });
 
     this.helpToggleBtn.addEventListener('click', () => {
       this.helpModal.open();

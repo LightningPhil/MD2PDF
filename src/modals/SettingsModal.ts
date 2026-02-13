@@ -4,6 +4,11 @@
 import { BaseModal, type ModalElements } from './BaseModal.js';
 
 export interface TypographySettings {
+  // Page layout
+  pageSize: string;
+  marginMm: number;
+  emojiMode: 'preserve' | 'suppress';
+  
   // Font sizes
   baseFontSizePt: number;
   h1Scale: number;
@@ -25,6 +30,11 @@ export interface TypographySettings {
 }
 
 export interface SettingsModalElements extends ModalElements {
+  // Page layout
+  pageSize: HTMLSelectElement;
+  margin: HTMLSelectElement;
+  emojiMode: HTMLSelectElement;
+  
   // Font size inputs
   baseFontSize: HTMLInputElement;
   h1Scale: HTMLInputElement;
@@ -51,12 +61,15 @@ export interface SettingsModalElements extends ModalElements {
 }
 
 const DEFAULT_SETTINGS: TypographySettings = {
+  pageSize: 'a4',
+  marginMm: 20,
+  emojiMode: 'preserve',
   baseFontSizePt: 12,
   h1Scale: 2.0,
   h2Scale: 1.5,
   h3Scale: 1.2,
   codeFontSizePt: 10,
-  tableFontSizePt: 11,
+  tableFontSizePt: 10,
   headerFooterFontSizePt: 10,
   lineHeight: 1.4,
   paragraphSpacingPt: 12,
@@ -68,6 +81,11 @@ const DEFAULT_SETTINGS: TypographySettings = {
 
 export class SettingsModal extends BaseModal {
   protected readonly bodyClass = 'settings-modal-open';
+  
+  // Page layout
+  private readonly pageSize: HTMLSelectElement;
+  private readonly margin: HTMLSelectElement;
+  private readonly emojiMode: HTMLSelectElement;
   
   // Font size inputs
   private readonly baseFontSize: HTMLInputElement;
@@ -99,6 +117,9 @@ export class SettingsModal extends BaseModal {
   constructor(elements: SettingsModalElements) {
     super(elements);
     
+    this.pageSize = elements.pageSize;
+    this.margin = elements.margin;
+    this.emojiMode = elements.emojiMode;
     this.baseFontSize = elements.baseFontSize;
     this.h1Scale = elements.h1Scale;
     this.h2Scale = elements.h2Scale;
@@ -135,6 +156,9 @@ export class SettingsModal extends BaseModal {
   }
 
   private populateFromSettings(): void {
+    this.pageSize.value = this.settings.pageSize;
+    this.margin.value = String(this.settings.marginMm);
+    this.emojiMode.value = this.settings.emojiMode;
     this.baseFontSize.value = String(this.settings.baseFontSizePt);
     this.h1Scale.value = String(this.settings.h1Scale);
     this.h2Scale.value = String(this.settings.h2Scale);
@@ -152,6 +176,9 @@ export class SettingsModal extends BaseModal {
 
   private readFormValues(): TypographySettings {
     return {
+      pageSize: this.pageSize.value || DEFAULT_SETTINGS.pageSize,
+      marginMm: this.parseNumber(this.margin.value, DEFAULT_SETTINGS.marginMm, 5, 50),
+      emojiMode: this.emojiMode.value === 'suppress' ? 'suppress' : 'preserve',
       baseFontSizePt: this.parseNumber(this.baseFontSize.value, DEFAULT_SETTINGS.baseFontSizePt, 6, 48),
       h1Scale: this.parseNumber(this.h1Scale.value, DEFAULT_SETTINGS.h1Scale, 1, 4),
       h2Scale: this.parseNumber(this.h2Scale.value, DEFAULT_SETTINGS.h2Scale, 1, 3),

@@ -7,23 +7,6 @@
 
 import type { ManagedDocument } from '../types/document.js';
 import type { UploadedMarkdownFile } from '../types/index.js';
-import { EventEmitter } from '../utils/event-emitter.js';
-
-/**
- * Events emitted by DocumentService.
- */
-export type DocumentServiceEvents = {
-  /** A document was added */
-  'document:added': { document: ManagedDocument };
-  /** A document was removed */
-  'document:removed': { documentId: string; removedIndex: number };
-  /** A document was renamed */
-  'document:renamed': { documentId: string; oldFilename: string; newFilename: string };
-  /** The active document changed */
-  'active:changed': { documentId: string | null; previousId: string | null };
-  /** Document content was updated */
-  'content:updated': { documentId: string };
-};
 
 /**
  * Result of adding uploaded files.
@@ -50,8 +33,6 @@ export class DocumentService {
   private documents: ManagedDocument[] = [];
   private activeDocumentId: string | null = null;
   private untitledCounter = 1;
-
-  public readonly events = new EventEmitter<DocumentServiceEvents>();
 
   /**
    * Get all documents.
@@ -113,7 +94,6 @@ export class DocumentService {
     }
 
     this.activeDocumentId = documentId;
-    this.events.emit('active:changed', { documentId, previousId });
   }
 
   /**
@@ -126,7 +106,6 @@ export class DocumentService {
     }
 
     doc.content = content;
-    this.events.emit('content:updated', { documentId });
     return true;
   }
 
@@ -160,7 +139,6 @@ export class DocumentService {
    */
   addDocument(document: ManagedDocument): void {
     this.documents.push(document);
-    this.events.emit('document:added', { document });
   }
 
   /**
@@ -178,7 +156,6 @@ export class DocumentService {
       const document = this.createDocument(uniqueName, file.content);
       this.documents.push(document);
       addedDocuments.push(document);
-      this.events.emit('document:added', { document });
     });
 
     return {
@@ -208,9 +185,7 @@ export class DocumentService {
       return { success: true, newName: unique };
     }
 
-    const oldFilename = target.filename;
     target.filename = unique;
-    this.events.emit('document:renamed', { documentId, oldFilename, newFilename: unique });
     
     return { success: true, newName: unique };
   }
@@ -229,19 +204,16 @@ export class DocumentService {
     const wasActive = closedDocument.id === this.activeDocumentId;
     
     this.documents.splice(closingIndex, 1);
-    this.events.emit('document:removed', { documentId, removedIndex: closingIndex });
 
     let nextActiveId: string | null = null;
     
     if (this.documents.length === 0) {
       this.activeDocumentId = null;
-      this.events.emit('active:changed', { documentId: null, previousId: closedDocument.id });
     } else if (wasActive) {
       const replacementIndex = Math.min(closingIndex, this.documents.length - 1);
       const replacement = this.documents[replacementIndex];
       nextActiveId = replacement.id;
       this.activeDocumentId = nextActiveId;
-      this.events.emit('active:changed', { documentId: nextActiveId, previousId: closedDocument.id });
     } else {
       // Keep current active document
       nextActiveId = this.activeDocumentId;
@@ -259,13 +231,8 @@ export class DocumentService {
    * Clear all documents.
    */
   clear(): void {
-    const previousActive = this.activeDocumentId;
     this.documents = [];
     this.activeDocumentId = null;
-    
-    if (previousActive !== null) {
-      this.events.emit('active:changed', { documentId: null, previousId: previousActive });
-    }
   }
 
   /**
@@ -342,10 +309,10 @@ export class DocumentService {
   }
 
   /**
-   * Generate a unique document ID.
+   * Generate a unique document ID using a cryptographically secure UUID.
    */
   private createDocumentId(): string {
-    return `doc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    return crypto.randomUUID();
   }
 
   /**

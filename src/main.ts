@@ -98,38 +98,45 @@ class MD2PDFApp {
       void this.exportDocuments(scope);
     });
 
-    this.ui.onSettingsChange(() => {
-      this.applySettings();
-      this.renderActiveDocument();
-      void this.recomputeInactivePageCounts();
-      this.refreshDocumentList();
-    });
-
     this.ui.onHeaderFooterChange(() => {
-      this.applyHeaderFooter();
-      this.renderActiveDocument();
-      void this.recomputeInactivePageCounts();
-      this.refreshDocumentList();
+      void this.applyHeaderFooter().then(() => {
+        this.updateActiveDocumentPageCount();
+        void this.recomputeInactivePageCounts();
+        this.refreshDocumentList();
+        this.ui.refreshPreviewViewport();
+      });
     });
 
     this.ui.onTypographySettingsChange((settings) => {
-      this.pageManager.setTypographySettings({
-        baseFontSizePt: settings.baseFontSizePt,
-        h1Scale: settings.h1Scale,
-        h2Scale: settings.h2Scale,
-        h3Scale: settings.h3Scale,
-        lineHeight: settings.lineHeight,
-        paragraphSpacingPt: settings.paragraphSpacingPt,
-        codeFontSizePt: settings.codeFontSizePt,
-        tableFontSizePt: settings.tableFontSizePt,
-        headerFooterFontSizePt: settings.headerFooterFontSizePt,
-        linkUnderline: settings.linkUnderline,
-        codeBlockBackground: settings.codeBlockBackground,
-        codeBlockBorder: settings.codeBlockBorder,
-        codeBlockLineNumbers: settings.codeBlockLineNumbers,
+      // First update page layout settings (page size, margin, emoji)
+      void this.pageManager.updateConfig({
+        pageSize: settings.pageSize as PageSizeKey,
+        fontSizePx: settings.baseFontSizePt,
+        marginMm: settings.marginMm,
+        emojiMode: settings.emojiMode,
+      }).then(() => {
+        // Then update typography settings
+        return this.pageManager.setTypographySettings({
+          baseFontSizePt: settings.baseFontSizePt,
+          h1Scale: settings.h1Scale,
+          h2Scale: settings.h2Scale,
+          h3Scale: settings.h3Scale,
+          lineHeight: settings.lineHeight,
+          paragraphSpacingPt: settings.paragraphSpacingPt,
+          codeFontSizePt: settings.codeFontSizePt,
+          tableFontSizePt: settings.tableFontSizePt,
+          headerFooterFontSizePt: settings.headerFooterFontSizePt,
+          linkUnderline: settings.linkUnderline,
+          codeBlockBackground: settings.codeBlockBackground,
+          codeBlockBorder: settings.codeBlockBorder,
+          codeBlockLineNumbers: settings.codeBlockLineNumbers,
+        });
+      }).then(() => {
+        this.updateActiveDocumentPageCount();
+        void this.recomputeInactivePageCounts();
+        this.refreshDocumentList();
+        this.ui.refreshPreviewViewport();
       });
-      void this.recomputeInactivePageCounts();
-      this.refreshDocumentList();
     });
 
     // Bidirectional scroll sync: canvas click -> editor
@@ -157,21 +164,19 @@ class MD2PDFApp {
     });
   }
 
-  private applyHeaderFooter(): void {
+  private applyHeaderFooter(): Promise<void> {
     const hfConfig = this.ui.getHeaderFooterConfig();
-    this.pageManager.setHeaderFooter(hfConfig);
+    return this.pageManager.setHeaderFooter(hfConfig);
   }
 
-  private applySettings(): void {
-    const pageSize = this.ui.getPageSize() as PageSizeKey;
-    const fontSizePx = this.ui.getFontSize();
-    const marginMm = this.ui.getMargin();
-    const emojiMode = this.ui.getEmojiMode();
-
-    this.pageManager.setPageSize(pageSize);
-    this.pageManager.setFontSize(fontSizePx);
-    this.pageManager.setMargin(marginMm);
-    this.pageManager.setEmojiMode(emojiMode);
+  /**
+   * Updates the page count for the active document without re-rendering.
+   */
+  private updateActiveDocumentPageCount(): void {
+    const active = this.documentService.getActive();
+    if (active) {
+      this.documentService.updatePageCount(active.id, this.pageManager.getPageCount());
+    }
   }
 
   private initializeDocuments(): void {

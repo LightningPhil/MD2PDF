@@ -272,9 +272,13 @@ export class PageManager {
   /**
    * Sets the header/footer configuration.
    */
-  setHeaderFooter(config: HeaderFooterConfig | undefined): void {
+  /**
+   * Sets the header/footer configuration.
+   * Returns a promise that resolves when rendering completes.
+   */
+  setHeaderFooter(config: HeaderFooterConfig | undefined): Promise<void> {
     this.headerFooter = config;
-    void this.render();
+    return this.render();
   }
 
   /**
@@ -302,11 +306,48 @@ export class PageManager {
   }
 
   /**
-   * Sets typography configuration (heading scales, line height, etc.).
+   * Batched config update - applies multiple settings with a single render.
+   * Use this instead of calling individual setters when changing multiple settings at once.
+   * Returns a promise that resolves when rendering completes (or immediately if no changes).
    */
-  setTypographySettings(config: TypographyConfig | undefined): void {
+  updateConfig(config: {
+    pageSize?: PageSizeKey;
+    marginMm?: number;
+    fontSizePx?: number;
+    emojiMode?: EmojiMode;
+  }): Promise<void> {
+    let changed = false;
+
+    if (config.pageSize !== undefined && this.pageSize !== config.pageSize) {
+      this.pageSize = config.pageSize;
+      changed = true;
+    }
+    if (config.marginMm !== undefined && this.marginMm !== config.marginMm) {
+      this.marginMm = config.marginMm;
+      changed = true;
+    }
+    if (config.fontSizePx !== undefined && this.fontSizePx !== config.fontSizePx) {
+      this.fontSizePx = config.fontSizePx;
+      changed = true;
+    }
+    if (config.emojiMode !== undefined && this.emojiMode !== config.emojiMode) {
+      this.emojiMode = config.emojiMode;
+      changed = true;
+    }
+
+    if (changed) {
+      return this.render();
+    }
+    return Promise.resolve();
+  }
+
+  /**
+   * Sets typography configuration (heading scales, line height, etc.).
+   * Returns a promise that resolves when rendering completes.
+   */
+  setTypographySettings(config: TypographyConfig | undefined): Promise<void> {
     this.typographyConfig = config;
-    void this.render();
+    return this.render();
   }
 
   /**

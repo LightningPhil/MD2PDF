@@ -1,18 +1,28 @@
 /**
  * Source mapping resolution module - maps source markdown lines to rendered PDF positions.
+ * 
+ * This module provides bidirectional mapping between source markdown line numbers
+ * and rendered page positions (page index + Y coordinate).
  */
-import { clamp } from '../utils/math.js';
 import type { DrawOp, PageLayout } from '../typesetter-engine/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Maps a range of source lines to a rendered position on a page.
+ */
 export interface SourceMappingEntry {
+  /** 1-based start line in source markdown */
   sourceLineStart: number;
+  /** 1-based end line in source markdown (inclusive) */
   sourceLineEnd: number;
+  /** 0-based page index */
   pageIndex: number;
+  /** Y position (top) in points from page top */
   yStartPt: number;
+  /** Y position (bottom) in points from page top */
   yEndPt: number;
 }
 
@@ -21,62 +31,20 @@ interface SourceSpanLike {
   end: number;
 }
 
-type RenderRole = 'heading' | 'paragraph' | 'listItem' | 'tableCell' | 'mathText' | 'code' | 'rule' | 'unknown';
-
-interface RenderedLineAnchor {
-  index: number;
-  pageIndex: number;
-  baselinePt: number;
-  yStartPt: number;
-  yEndPt: number;
-  xPt: number;
-  role: RenderRole;
-  text: string;
-  normalizedText: string;
-}
-
-interface RenderedLineGroup {
-  pageIndex: number;
-  baselinePt: number;
-  yStartPt: number;
-  yEndPt: number;
-  xMinPt: number;
-  sampleCount: number;
-  roleScores: Record<RenderRole, number>;
-  textFragments: Array<{ xPt: number; text: string }>;
-}
-
-interface RenderedLineFragment {
-  pageIndex: number;
-  baselinePt: number;
-  yStartPt: number;
-  yEndPt: number;
-  xPt: number;
-  role: RenderRole;
-  text: string;
-}
-
-interface SourceLineDescriptor {
-  lineNumber: number;
-  raw: string;
-  role: RenderRole | 'blank' | 'meta';
-  renderable: boolean;
-  normalizedText: string;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASELINE_GROUP_TOLERANCE_PT = 1.25;
 const MIN_MAPPING_HEIGHT_PT = 1;
-const LINE_MATCH_SEARCH_WINDOW = 48;
-const MIN_LINE_MATCH_SCORE = 0.45;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Primary exports
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Validates and normalizes source mapping data from an unknown source.
+ * Returns null if the input is invalid or empty.
+ */
 export function normalizeSourceMapping(candidate: unknown): SourceMappingEntry[] | null {
   if (!Array.isArray(candidate)) {
     return null;
@@ -131,37 +99,10 @@ export function normalizeSourceMapping(candidate: unknown): SourceMappingEntry[]
   return normalized;
 }
 
-export function resolveBestSourceMapping(
-  markdown: string,
-  pages: readonly PageLayout[],
-  provided: SourceMappingEntry[] | null,
-  sourceSpanDerived: SourceMappingEntry[] | null,
-  renderedDerived: SourceMappingEntry[],
-): SourceMappingEntry[] | undefined {
-  if (provided && provided.length > 0) {
-    return provided;
-  }
-
-  if (sourceSpanDerived && sourceSpanDerived.length > 0) {
-    const enriched = enrichSourceMappingCoverage(
-      markdown,
-      pages,
-      sourceSpanDerived,
-      renderedDerived,
-    );
-    if (enriched.length > 0) {
-      return enriched;
-    }
-    return sourceSpanDerived;
-  }
-
-  if (renderedDerived.length > 0) {
-    return renderedDerived;
-  }
-
-  return undefined;
-}
-
+/**
+ * Derives source mapping from sourceSpan annotations on draw operations.
+ * This is the primary strategy when the typesetter provides source spans.
+ */
 export function deriveSourceMappingFromSourceSpans(markdown: string, pages: PageLayout[]): SourceMappingEntry[] | null {
   if (!markdown || pages.length === 0) {
     return null;
@@ -194,6 +135,7 @@ export function deriveSourceMappingFromSourceSpans(markdown: string, pages: Page
     return a.yStartPt - b.yStartPt;
   });
 
+  // Merge adjacent entries for the same source line range
   const merged: SourceMappingEntry[] = [];
   for (const entry of extracted) {
     const previous = merged.length > 0 ? merged[merged.length - 1] : null;
@@ -214,244 +156,13 @@ export function deriveSourceMappingFromSourceSpans(markdown: string, pages: Page
   return merged.length > 0 ? merged : null;
 }
 
-export function deriveSourceMappingFromRenderedLines(markdown: string, pages: PageLayout[]): SourceMappingEntry[] {
-  if (!markdown || pages.length === 0) {
-    return [];
-  }
-
-  const sourceLines = describeSourceLines(markdown);
-  if (sourceLines.length === 0) {
-    return [];
-  }
-
-  const renderedLines = collectRenderedLineAnchors(pages);
-  if (renderedLines.length === 0) {
-    return buildPageDistributedMapping(sourceLines.length, pages);
-  }
-
-  const matches = matchSourceLinesToRenderedLines(sourceLines, renderedLines);
-  if (matches.size === 0) {
-    return buildPageDistributedMapping(sourceLines.length, pages);
-  }
-
-  return buildSourceMappingFromMatches(sourceLines, renderedLines, matches, pages);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function enrichSourceMappingCoverage(
-  markdown: string,
-  pages: readonly PageLayout[],
-  primary: readonly SourceMappingEntry[],
-  fallback: readonly SourceMappingEntry[],
-): SourceMappingEntry[] {
-  if (primary.length === 0) {
-    return fallback.slice();
-  }
-
-  const sourceLineCount = getSourceLineCount(markdown);
-  if (sourceLineCount <= 0) {
-    return primary.slice();
-  }
-
-  if (fallback.length === 0) {
-    return primary.slice();
-  }
-
-  if (isSourceMappingCoverageComplete(primary, sourceLineCount)) {
-    return primary.slice();
-  }
-
-  const perLine: SourceMappingEntry[] = [];
-  for (let lineNumber = 1; lineNumber <= sourceLineCount; lineNumber += 1) {
-    const entry =
-      resolveMappingEntryForLine(primary, lineNumber, true)
-      ?? resolveMappingEntryForLine(fallback, lineNumber, true)
-      ?? resolveMappingEntryForLine(fallback, lineNumber)
-      ?? resolveMappingEntryForLine(primary, lineNumber);
-    if (!entry) {
-      continue;
-    }
-    perLine.push(createPerLineEntry(entry, lineNumber, pages));
-  }
-
-  if (perLine.length === 0) {
-    return primary.slice();
-  }
-
-  perLine.sort((a, b) => {
-    if (a.pageIndex !== b.pageIndex) {
-      return a.pageIndex - b.pageIndex;
-    }
-    if (a.yStartPt !== b.yStartPt) {
-      return a.yStartPt - b.yStartPt;
-    }
-    return a.sourceLineStart - b.sourceLineStart;
-  });
-
-  return perLine;
-}
-
-function isSourceMappingCoverageComplete(
-  mapping: readonly SourceMappingEntry[],
-  sourceLineCount: number,
-): boolean {
-  if (mapping.length === 0 || sourceLineCount <= 0) {
-    return false;
-  }
-
-  const covered = new Uint8Array(sourceLineCount + 1);
-  for (const entry of mapping) {
-    const start = clamp(Math.floor(entry.sourceLineStart), 1, sourceLineCount);
-    const end = clamp(Math.floor(entry.sourceLineEnd), start, sourceLineCount);
-    for (let line = start; line <= end; line += 1) {
-      covered[line] = 1;
-    }
-  }
-
-  for (let line = 1; line <= sourceLineCount; line += 1) {
-    if (covered[line] === 0) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function getSourceLineCount(markdown: string): number {
-  if (!markdown) {
-    return 0;
-  }
-  const normalized = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  return normalized.split('\n').length;
-}
-
-function resolveMappingEntryForLine(
-  entries: readonly SourceMappingEntry[],
-  lineNumber: number,
-  exactOnly = false,
-): SourceMappingEntry | null {
-  if (entries.length === 0) {
-    return null;
-  }
-
-  const exact: SourceMappingEntry[] = [];
-  let bestDistance = Number.POSITIVE_INFINITY;
-  let nearest: SourceMappingEntry | null = null;
-
-  for (const entry of entries) {
-    if (lineNumber >= entry.sourceLineStart && lineNumber <= entry.sourceLineEnd) {
-      exact.push(entry);
-      continue;
-    }
-
-    const distance = lineNumber < entry.sourceLineStart
-      ? entry.sourceLineStart - lineNumber
-      : lineNumber - entry.sourceLineEnd;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      nearest = entry;
-    }
-  }
-
-  if (exact.length > 0) {
-    return selectBestMappingEntryForLine(exact, lineNumber);
-  }
-
-  if (exactOnly) {
-    return null;
-  }
-
-  return nearest;
-}
-
-function selectBestMappingEntryForLine(
-  entries: readonly SourceMappingEntry[],
-  lineNumber: number,
-): SourceMappingEntry {
-  if (entries.length === 1) {
-    return entries[0];
-  }
-
-  const smallestRangeSpan = entries.reduce(
-    (smallest, entry) => Math.min(smallest, getSourceLineSpan(entry)),
-    Number.POSITIVE_INFINITY,
-  );
-  const mostSpecific = entries
-    .filter((entry) => getSourceLineSpan(entry) === smallestRangeSpan)
-    .slice()
-    .sort((a, b) => {
-      if (a.pageIndex !== b.pageIndex) {
-        return a.pageIndex - b.pageIndex;
-      }
-      return a.yStartPt - b.yStartPt;
-    });
-
-  if (mostSpecific.length === 1) {
-    return mostSpecific[0];
-  }
-
-  const minLine = mostSpecific.reduce(
-    (minValue, entry) => Math.min(minValue, entry.sourceLineStart),
-    Number.POSITIVE_INFINITY,
-  );
-  const maxLine = mostSpecific.reduce(
-    (maxValue, entry) => Math.max(maxValue, entry.sourceLineEnd),
-    Number.NEGATIVE_INFINITY,
-  );
-  const span = Math.max(1, maxLine - minLine);
-  const clampedLine = clamp(Math.floor(lineNumber), minLine, maxLine);
-  const normalized = (clampedLine - minLine) / span;
-  const selectedIndex = Math.round(normalized * (mostSpecific.length - 1));
-  return mostSpecific[clamp(selectedIndex, 0, mostSpecific.length - 1)];
-}
-
-function createPerLineEntry(
-  entry: SourceMappingEntry,
-  lineNumber: number,
-  pages: readonly PageLayout[],
-): SourceMappingEntry {
-  const startLine = entry.sourceLineStart;
-  const endLine = Math.max(startLine, entry.sourceLineEnd);
-  const blockHeightPt = Math.max(MIN_MAPPING_HEIGHT_PT, entry.yEndPt - entry.yStartPt);
-
-  const safePageIndex = clamp(Math.floor(entry.pageIndex), 0, Math.max(0, pages.length - 1));
-  const pageHeightPt = Math.max(MIN_MAPPING_HEIGHT_PT, pages[safePageIndex]?.heightPt ?? MIN_MAPPING_HEIGHT_PT);
-
-  let yStartPt = entry.yStartPt;
-  let lineHeightPt = blockHeightPt;
-
-  if (endLine > startLine) {
-    const clampedLine = clamp(Math.floor(lineNumber), startLine, endLine);
-    const normalizedLine = (clampedLine - startLine) / (endLine - startLine);
-    yStartPt = entry.yStartPt + (blockHeightPt * normalizedLine);
-    lineHeightPt = Math.max(
-      MIN_MAPPING_HEIGHT_PT,
-      blockHeightPt / ((endLine - startLine) + 1),
-    );
-  }
-
-  const clampedStart = clamp(yStartPt, 0, pageHeightPt);
-  const clampedEnd = clamp(clampedStart + lineHeightPt, clampedStart, pageHeightPt);
-  const yEndPt = clampedEnd > clampedStart
-    ? clampedEnd
-    : Math.min(pageHeightPt, clampedStart + MIN_MAPPING_HEIGHT_PT);
-
-  return {
-    sourceLineStart: lineNumber,
-    sourceLineEnd: lineNumber,
-    pageIndex: safePageIndex,
-    yStartPt: clampedStart,
-    yEndPt,
-  };
-}
-
-function getSourceLineSpan(entry: SourceMappingEntry): number {
-  return Math.max(0, entry.sourceLineEnd - entry.sourceLineStart);
-}
-
+/**
+ * Recursively collects source mapping entries from draw operations.
+ */
 function collectSourceSpanMappingsFromOps(
   ops: ReadonlyArray<DrawOp>,
   pageIndex: number,
@@ -479,711 +190,9 @@ function collectSourceSpanMappingsFromOps(
   }
 }
 
-function collectRenderedLineAnchors(pages: readonly PageLayout[]): RenderedLineAnchor[] {
-  const groupedAnchors: RenderedLineAnchor[] = [];
-  const ruleAnchors: RenderedLineAnchor[] = [];
-
-  for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-    const page = pages[pageIndex];
-    const fragments: RenderedLineFragment[] = [];
-    collectTextFragmentsFromOps(page.ops, pageIndex, 'unknown', fragments);
-    ruleAnchors.push(...collectRuleAnchorsFromOps(page.ops, pageIndex, page.widthPt));
-
-    if (fragments.length === 0) {
-      continue;
-    }
-
-    fragments.sort((a, b) => {
-      if (a.baselinePt !== b.baselinePt) {
-        return a.baselinePt - b.baselinePt;
-      }
-      return a.xPt - b.xPt;
-    });
-
-    const groups: RenderedLineGroup[] = [];
-    for (const fragment of fragments) {
-      const previous = groups.length > 0 ? groups[groups.length - 1] : null;
-      if (previous && Math.abs(fragment.baselinePt - previous.baselinePt) <= BASELINE_GROUP_TOLERANCE_PT) {
-        const nextCount = previous.sampleCount + 1;
-        previous.baselinePt = (previous.baselinePt * previous.sampleCount + fragment.baselinePt) / nextCount;
-        previous.sampleCount = nextCount;
-        previous.yStartPt = Math.min(previous.yStartPt, fragment.yStartPt);
-        previous.yEndPt = Math.max(previous.yEndPt, fragment.yEndPt);
-        previous.xMinPt = Math.min(previous.xMinPt, fragment.xPt);
-        previous.roleScores[fragment.role] += Math.max(1, fragment.text.length);
-        previous.textFragments.push({ xPt: fragment.xPt, text: fragment.text });
-      } else {
-        const roleScores: Record<RenderRole, number> = {
-          heading: 0,
-          paragraph: 0,
-          listItem: 0,
-          tableCell: 0,
-          mathText: 0,
-          code: 0,
-          rule: 0,
-          unknown: 0,
-        };
-        roleScores[fragment.role] = Math.max(1, fragment.text.length);
-        groups.push({
-          pageIndex: fragment.pageIndex,
-          baselinePt: fragment.baselinePt,
-          yStartPt: fragment.yStartPt,
-          yEndPt: fragment.yEndPt,
-          xMinPt: fragment.xPt,
-          sampleCount: 1,
-          roleScores,
-          textFragments: [{ xPt: fragment.xPt, text: fragment.text }],
-        });
-      }
-    }
-
-    groups.sort((a, b) => {
-      if (a.yStartPt !== b.yStartPt) {
-        return a.yStartPt - b.yStartPt;
-      }
-      return a.xMinPt - b.xMinPt;
-    });
-
-    for (const group of groups) {
-      const role = selectDominantRole(group.roleScores);
-      const text = group.textFragments
-        .slice()
-        .sort((a, b) => a.xPt - b.xPt)
-        .map((fragment) => fragment.text)
-        .join('');
-      groupedAnchors.push({
-        index: -1,
-        pageIndex: group.pageIndex,
-        baselinePt: group.baselinePt,
-        yStartPt: group.yStartPt,
-        yEndPt: Math.max(group.yEndPt, group.yStartPt + MIN_MAPPING_HEIGHT_PT),
-        xPt: group.xMinPt,
-        role,
-        text,
-        normalizedText: normalizeRenderedText(text),
-      });
-    }
-  }
-
-  const merged = [...groupedAnchors, ...ruleAnchors];
-  merged.sort((a, b) => {
-    if (a.pageIndex !== b.pageIndex) {
-      return a.pageIndex - b.pageIndex;
-    }
-    if (a.yStartPt !== b.yStartPt) {
-      return a.yStartPt - b.yStartPt;
-    }
-    return a.xPt - b.xPt;
-  });
-
-  return merged.map((anchor, index) => ({ ...anchor, index }));
-}
-
-function collectTextFragmentsFromOps(
-  ops: ReadonlyArray<DrawOp>,
-  pageIndex: number,
-  roleHint: RenderRole,
-  output: RenderedLineFragment[],
-): void {
-  for (const op of ops) {
-    if (op.kind === 'textSpan') {
-      collectTextFragmentsFromOps(op.ops, pageIndex, normalizeRenderRole(op.role), output);
-      continue;
-    }
-
-    const fragment = toTextFragment(op, pageIndex, roleHint);
-    if (fragment) {
-      output.push(fragment);
-    }
-  }
-}
-
-function collectRuleAnchorsFromOps(
-  ops: ReadonlyArray<DrawOp>,
-  pageIndex: number,
-  pageWidthPt: number,
-): RenderedLineAnchor[] {
-  const anchors: RenderedLineAnchor[] = [];
-  for (const op of ops) {
-    if (op.kind !== 'rule') {
-      continue;
-    }
-
-    const isLikelyHorizontalRule = op.hPt <= 2 && op.wPt >= pageWidthPt * 0.7;
-    if (!isLikelyHorizontalRule) {
-      continue;
-    }
-
-    anchors.push({
-      index: -1,
-      pageIndex,
-      baselinePt: op.yPt + op.hPt / 2,
-      yStartPt: op.yPt,
-      yEndPt: Math.max(op.yPt + op.hPt, op.yPt + MIN_MAPPING_HEIGHT_PT),
-      xPt: op.xPt,
-      role: 'rule',
-      text: '',
-      normalizedText: '',
-    });
-  }
-  return anchors;
-}
-
-function toTextFragment(op: DrawOp, pageIndex: number, role: RenderRole): RenderedLineFragment | null {
-  if (op.kind !== 'glyph' && op.kind !== 'glyphRun') {
-    return null;
-  }
-  const ascentPt = op.fontSizePt * 0.85;
-  const descentPt = op.fontSizePt * 0.35;
-  return {
-    pageIndex,
-    baselinePt: op.yBaselinePt,
-    yStartPt: op.yBaselinePt - ascentPt,
-    yEndPt: op.yBaselinePt + descentPt,
-    xPt: op.xPt,
-    role,
-    text: op.kind === 'glyphRun' ? op.text : op.char,
-  };
-}
-
-function matchSourceLinesToRenderedLines(
-  sourceLines: readonly SourceLineDescriptor[],
-  renderedLines: readonly RenderedLineAnchor[],
-): Map<number, number> {
-  const renderableSourceLines = sourceLines.filter((line) => line.renderable);
-  if (renderableSourceLines.length === 0 || renderedLines.length === 0) {
-    return new Map();
-  }
-
-  const knownRoleLines = renderedLines.filter((line) => line.role !== 'unknown');
-  const usableRenderedLines = knownRoleLines.length > 0 ? knownRoleLines : renderedLines;
-
-  const matches = new Map<number, number>();
-  let lastRenderedIndex = 0;
-
-  for (let i = 0; i < renderableSourceLines.length; i += 1) {
-    const sourceLine = renderableSourceLines[i];
-    const expectedIndex = renderableSourceLines.length === 1
-      ? 0
-      : (i / (renderableSourceLines.length - 1)) * (usableRenderedLines.length - 1);
-
-    const rawSearchStart = Math.max(
-      lastRenderedIndex,
-      Math.floor(expectedIndex - LINE_MATCH_SEARCH_WINDOW),
-    );
-    const rawSearchEnd = Math.min(
-      usableRenderedLines.length - 1,
-      Math.ceil(expectedIndex + LINE_MATCH_SEARCH_WINDOW),
-    );
-    const searchStart = Math.min(rawSearchStart, usableRenderedLines.length - 1);
-    const searchEnd = Math.max(searchStart, rawSearchEnd);
-
-    let bestIndex = clamp(Math.round(expectedIndex), searchStart, searchEnd);
-    let bestScore = Number.NEGATIVE_INFINITY;
-
-    for (let candidateIndex = searchStart; candidateIndex <= searchEnd; candidateIndex += 1) {
-      const candidate = usableRenderedLines[candidateIndex];
-      const textScore = computeTextSimilarity(sourceLine.normalizedText, candidate.normalizedText);
-      const roleScore = getRoleCompatibilityScore(sourceLine.role, candidate.role);
-      const distancePenalty =
-        Math.abs(candidateIndex - expectedIndex) / Math.max(1, usableRenderedLines.length - 1);
-      const totalScore = textScore * 3 + roleScore - distancePenalty;
-
-      if (totalScore > bestScore) {
-        bestScore = totalScore;
-        bestIndex = candidateIndex;
-      }
-    }
-
-    const chosenIndex = bestScore < MIN_LINE_MATCH_SCORE
-      ? clamp(Math.round(expectedIndex), searchStart, searchEnd)
-      : bestIndex;
-    const chosen = usableRenderedLines[chosenIndex];
-    matches.set(sourceLine.lineNumber, chosen.index);
-    lastRenderedIndex = Math.max(lastRenderedIndex, chosenIndex);
-  }
-
-  return matches;
-}
-
-function buildSourceMappingFromMatches(
-  sourceLines: readonly SourceLineDescriptor[],
-  renderedLines: readonly RenderedLineAnchor[],
-  matches: ReadonlyMap<number, number>,
-  pages: readonly PageLayout[],
-): SourceMappingEntry[] {
-  const mapping: SourceMappingEntry[] = [];
-
-  const previousByLine: Array<{ lineNumber: number; anchorIndex: number } | null> = new Array(sourceLines.length + 1).fill(null);
-  const nextByLine: Array<{ lineNumber: number; anchorIndex: number } | null> = new Array(sourceLines.length + 1).fill(null);
-
-  let previous: { lineNumber: number; anchorIndex: number } | null = null;
-  for (let line = 1; line <= sourceLines.length; line += 1) {
-    const anchorIndex = matches.get(line);
-    if (anchorIndex !== undefined) {
-      previous = { lineNumber: line, anchorIndex };
-    }
-    previousByLine[line] = previous;
-  }
-
-  let next: { lineNumber: number; anchorIndex: number } | null = null;
-  for (let line = sourceLines.length; line >= 1; line -= 1) {
-    const anchorIndex = matches.get(line);
-    if (anchorIndex !== undefined) {
-      next = { lineNumber: line, anchorIndex };
-    }
-    nextByLine[line] = next;
-  }
-
-  for (let line = 1; line <= sourceLines.length; line += 1) {
-    const directAnchorIndex = matches.get(line);
-    if (directAnchorIndex !== undefined) {
-      mapping.push(createMappingEntryFromAnchor(line, renderedLines[directAnchorIndex], pages));
-      continue;
-    }
-
-    const previousMatch = previousByLine[line];
-    const nextMatch = nextByLine[line];
-
-    if (previousMatch && nextMatch && previousMatch.lineNumber !== nextMatch.lineNumber) {
-      const prevAnchor = renderedLines[previousMatch.anchorIndex];
-      const nextAnchor = renderedLines[nextMatch.anchorIndex];
-      const prevDocY = toDocumentYPt(prevAnchor, pages);
-      const nextDocY = toDocumentYPt(nextAnchor, pages);
-      const lineRatio = (line - previousMatch.lineNumber) / (nextMatch.lineNumber - previousMatch.lineNumber);
-      const interpolatedDocY = prevDocY + (nextDocY - prevDocY) * lineRatio;
-      const located = locatePageForDocumentY(interpolatedDocY, pages);
-      const interpolatedHeightPt = interpolate(
-        getAnchorHeightPt(prevAnchor),
-        getAnchorHeightPt(nextAnchor),
-        lineRatio,
-      );
-      mapping.push(
-        createMappingEntryAtPosition(
-          line,
-          located.pageIndex,
-          located.yOnPagePt,
-          interpolatedHeightPt,
-          pages,
-        ),
-      );
-      continue;
-    }
-
-    const nearest = previousMatch ?? nextMatch;
-    if (nearest) {
-      mapping.push(createMappingEntryFromAnchor(line, renderedLines[nearest.anchorIndex], pages));
-      continue;
-    }
-
-    return buildPageDistributedMapping(sourceLines.length, pages);
-  }
-
-  return mapping;
-}
-
-function createMappingEntryFromAnchor(
-  lineNumber: number,
-  anchor: RenderedLineAnchor,
-  pages: readonly PageLayout[],
-): SourceMappingEntry {
-  return createMappingEntryAtPosition(
-    lineNumber,
-    anchor.pageIndex,
-    anchor.yStartPt,
-    getAnchorHeightPt(anchor),
-    pages,
-  );
-}
-
-function createMappingEntryAtPosition(
-  lineNumber: number,
-  pageIndex: number,
-  yStartPt: number,
-  heightPt: number,
-  pages: readonly PageLayout[],
-): SourceMappingEntry {
-  const page = pages[pageIndex];
-  const pageHeight = Math.max(1, page?.heightPt ?? 1);
-  const clampedStart = clamp(yStartPt, 0, pageHeight);
-  const desiredHeight = Math.max(MIN_MAPPING_HEIGHT_PT, heightPt);
-  const clampedEnd = clamp(clampedStart + desiredHeight, 0, pageHeight);
-  const yEndPt = clampedEnd > clampedStart
-    ? clampedEnd
-    : Math.min(pageHeight, clampedStart + MIN_MAPPING_HEIGHT_PT);
-
-  return {
-    sourceLineStart: lineNumber,
-    sourceLineEnd: lineNumber,
-    pageIndex,
-    yStartPt: clampedStart,
-    yEndPt,
-  };
-}
-
-function describeSourceLines(markdown: string): SourceLineDescriptor[] {
-  const normalized = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const rawLines = normalized.split('\n');
-  const sourceLines: SourceLineDescriptor[] = [];
-
-  let inCodeFence = false;
-  let inDisplayMath = false;
-
-  for (let i = 0; i < rawLines.length; i += 1) {
-    const raw = rawLines[i] ?? '';
-    const lineNumber = i + 1;
-    const trimmed = raw.trim();
-
-    if (trimmed.length === 0) {
-      sourceLines.push({
-        lineNumber,
-        raw,
-        role: 'blank',
-        renderable: false,
-        normalizedText: '',
-      });
-      continue;
-    }
-
-    if (/^```/.test(trimmed)) {
-      inCodeFence = !inCodeFence;
-      sourceLines.push({
-        lineNumber,
-        raw,
-        role: 'meta',
-        renderable: false,
-        normalizedText: '',
-      });
-      continue;
-    }
-
-    if (inCodeFence) {
-      sourceLines.push({
-        lineNumber,
-        raw,
-        role: 'code',
-        renderable: true,
-        normalizedText: normalizeSourceLineText(raw, 'code'),
-      });
-      continue;
-    }
-
-    if (inDisplayMath) {
-      const closesMath = trimmed.endsWith('$$');
-      const content = closesMath ? trimmed.slice(0, Math.max(0, trimmed.length - 2)).trim() : raw;
-      sourceLines.push({
-        lineNumber,
-        raw,
-        role: content ? 'mathText' : 'meta',
-        renderable: content.length > 0,
-        normalizedText: content ? normalizeSourceLineText(content, 'mathText') : '',
-      });
-      if (closesMath) {
-        inDisplayMath = false;
-      }
-      continue;
-    }
-
-    if (trimmed.startsWith('$$')) {
-      const closesSameLine = trimmed.endsWith('$$') && trimmed.length >= 4;
-      if (closesSameLine) {
-        const content = trimmed.slice(2, Math.max(2, trimmed.length - 2)).trim();
-        sourceLines.push({
-          lineNumber,
-          raw,
-          role: content ? 'mathText' : 'meta',
-          renderable: content.length > 0,
-          normalizedText: content ? normalizeSourceLineText(content, 'mathText') : '',
-        });
-      } else {
-        const content = trimmed.slice(2).trim();
-        sourceLines.push({
-          lineNumber,
-          raw,
-          role: content ? 'mathText' : 'meta',
-          renderable: content.length > 0,
-          normalizedText: content ? normalizeSourceLineText(content, 'mathText') : '',
-        });
-        inDisplayMath = true;
-      }
-      continue;
-    }
-
-    if (isTableSeparatorLine(trimmed)) {
-      sourceLines.push({
-        lineNumber,
-        raw,
-        role: 'meta',
-        renderable: false,
-        normalizedText: '',
-      });
-      continue;
-    }
-
-    const classified = classifySourceLine(raw);
-    sourceLines.push({
-      lineNumber,
-      raw,
-      role: classified.role,
-      renderable: classified.renderable,
-      normalizedText: classified.renderable ? normalizeSourceLineText(classified.text, classified.role) : '',
-    });
-  }
-
-  return sourceLines;
-}
-
-function classifySourceLine(rawLine: string): { role: RenderRole; renderable: boolean; text: string } {
-  const trimmed = rawLine.trim();
-
-  const headingMatch = rawLine.match(/^(#{1,3})\s+(.+)$/);
-  if (headingMatch) {
-    return { role: 'heading', renderable: true, text: headingMatch[2] ?? '' };
-  }
-
-  if (trimmed === '---') {
-    return { role: 'rule', renderable: true, text: '' };
-  }
-
-  const listMatch = rawLine.match(/^(\s*)([-+*]|\d+\.)\s+(.+)$/);
-  if (listMatch) {
-    return { role: 'listItem', renderable: true, text: listMatch[3] ?? '' };
-  }
-
-  const blockquoteMatch = rawLine.match(/^(\s*(?:>\s*)+)(.*)$/);
-  if (blockquoteMatch) {
-    return { role: 'paragraph', renderable: true, text: blockquoteMatch[2] ?? '' };
-  }
-
-  if (rawLine.includes('|') && !isTableSeparatorLine(trimmed)) {
-    return { role: 'tableCell', renderable: true, text: normalizeTableRowText(rawLine) };
-  }
-
-  return { role: 'paragraph', renderable: true, text: rawLine };
-}
-
-function isTableSeparatorLine(trimmedLine: string): boolean {
-  if (!trimmedLine.includes('|')) {
-    return false;
-  }
-  const cells = trimmedLine
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim());
-  if (cells.length === 0) {
-    return false;
-  }
-  return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
-}
-
-function normalizeTableRowText(row: string): string {
-  return row
-    .replace(/^\s*\|/, '')
-    .replace(/\|\s*$/, '')
-    .split('|')
-    .map((cell) => cell.trim())
-    .filter((cell) => cell.length > 0)
-    .join(' ');
-}
-
-function normalizeSourceLineText(text: string, role: RenderRole): string {
-  const roleAwareText = role === 'tableCell' ? normalizeTableRowText(text) : text;
-  return roleAwareText
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, ' $1 ')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, ' $1 ')
-    .replace(/`([^`]+)`/g, ' $1 ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/[*_~]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeRenderedText(text: string): string {
-  return text
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeRenderRole(role: string): RenderRole {
-  if (
-    role === 'heading' ||
-    role === 'paragraph' ||
-    role === 'listItem' ||
-    role === 'tableCell' ||
-    role === 'mathText' ||
-    role === 'code'
-  ) {
-    return role;
-  }
-  return 'unknown';
-}
-
-function selectDominantRole(scores: Record<RenderRole, number>): RenderRole {
-  let bestRole: RenderRole = 'unknown';
-  let bestScore = Number.NEGATIVE_INFINITY;
-  for (const role of Object.keys(scores) as RenderRole[]) {
-    const score = scores[role];
-    if (score > bestScore) {
-      bestScore = score;
-      bestRole = role;
-    }
-  }
-  return bestRole;
-}
-
-function getRoleCompatibilityScore(sourceRole: SourceLineDescriptor['role'], renderedRole: RenderRole): number {
-  if (sourceRole === renderedRole) {
-    return 1.2;
-  }
-  if (sourceRole === 'paragraph' && renderedRole === 'heading') {
-    return 0.2;
-  }
-  if (sourceRole === 'paragraph' && renderedRole === 'listItem') {
-    return 0.15;
-  }
-  if (sourceRole === 'tableCell' && renderedRole === 'paragraph') {
-    return 0.1;
-  }
-  if (sourceRole === 'rule' && renderedRole === 'unknown') {
-    return 0.1;
-  }
-  if (sourceRole === 'blank' || sourceRole === 'meta') {
-    return -0.2;
-  }
-  if (renderedRole === 'unknown') {
-    return 0;
-  }
-  return -0.35;
-}
-
-function computeTextSimilarity(sourceText: string, renderedText: string): number {
-  const source = sourceText.trim();
-  const rendered = renderedText.trim();
-  if (!source || !rendered) {
-    return 0;
-  }
-  if (source === rendered) {
-    return 1;
-  }
-
-  const sourceTokens = source.split(/\s+/).filter(Boolean);
-  const renderedTokens = rendered.split(/\s+/).filter(Boolean);
-  const tokenDice = diceCoefficient(sourceTokens, renderedTokens);
-
-  const sourceBigrams = buildBigrams(source);
-  const renderedBigrams = buildBigrams(rendered);
-  const bigramDice = diceCoefficient(sourceBigrams, renderedBigrams);
-
-  let substringScore = 0;
-  if (source.includes(rendered) || rendered.includes(source)) {
-    substringScore = Math.min(source.length, rendered.length) / Math.max(source.length, rendered.length);
-  }
-
-  return Math.max(tokenDice, bigramDice, substringScore * 0.9);
-}
-
-function buildBigrams(text: string): string[] {
-  if (text.length < 2) {
-    return text.length === 0 ? [] : [text];
-  }
-  const bigrams: string[] = [];
-  for (let i = 0; i < text.length - 1; i += 1) {
-    bigrams.push(text.slice(i, i + 2));
-  }
-  return bigrams;
-}
-
-function diceCoefficient(a: readonly string[], b: readonly string[]): number {
-  if (a.length === 0 || b.length === 0) {
-    return 0;
-  }
-  const counts = new Map<string, number>();
-  for (const token of a) {
-    counts.set(token, (counts.get(token) ?? 0) + 1);
-  }
-
-  let intersection = 0;
-  for (const token of b) {
-    const count = counts.get(token) ?? 0;
-    if (count > 0) {
-      intersection += 1;
-      counts.set(token, count - 1);
-    }
-  }
-  return (2 * intersection) / (a.length + b.length);
-}
-
-function toDocumentYPt(anchor: RenderedLineAnchor, pages: readonly PageLayout[]): number {
-  let yPt = anchor.yStartPt;
-  for (let i = 0; i < anchor.pageIndex && i < pages.length; i += 1) {
-    yPt += pages[i].heightPt;
-  }
-  return yPt;
-}
-
-function getAnchorHeightPt(anchor: RenderedLineAnchor): number {
-  return Math.max(MIN_MAPPING_HEIGHT_PT, anchor.yEndPt - anchor.yStartPt);
-}
-
-function interpolate(from: number, to: number, ratio: number): number {
-  return from + ((to - from) * ratio);
-}
-
-function buildPageDistributedMapping(sourceLineCount: number, pages: readonly PageLayout[]): SourceMappingEntry[] {
-  if (sourceLineCount <= 0 || pages.length === 0) {
-    return [];
-  }
-
-  const totalHeight = pages.reduce((sum, page) => sum + Math.max(1, page.heightPt), 0);
-  const mapping: SourceMappingEntry[] = [];
-
-  for (let sourceLine = 1; sourceLine <= sourceLineCount; sourceLine += 1) {
-    const ratio = sourceLineCount === 1 ? 0 : (sourceLine - 1) / (sourceLineCount - 1);
-    const targetYPt = ratio * Math.max(0, totalHeight - MIN_MAPPING_HEIGHT_PT);
-    const located = locatePageForDocumentY(targetYPt, pages);
-    const perPageLineEstimate = Math.max(1, Math.ceil(sourceLineCount / pages.length));
-    const lineHeightPt = Math.max(8, located.page.heightPt / perPageLineEstimate);
-    mapping.push({
-      sourceLineStart: sourceLine,
-      sourceLineEnd: sourceLine,
-      pageIndex: located.pageIndex,
-      yStartPt: located.yOnPagePt,
-      yEndPt: clamp(located.yOnPagePt + lineHeightPt, 0, located.page.heightPt),
-    });
-  }
-
-  return mapping;
-}
-
-function locatePageForDocumentY(
-  yPt: number,
-  pages: readonly PageLayout[],
-): { pageIndex: number; page: PageLayout; yOnPagePt: number } {
-  let remaining = Math.max(0, yPt);
-  for (let i = 0; i < pages.length; i += 1) {
-    const page = pages[i];
-    const pageHeight = Math.max(1, page.heightPt);
-    if (remaining <= pageHeight || i === pages.length - 1) {
-      return {
-        pageIndex: i,
-        page,
-        yOnPagePt: clamp(remaining, 0, pageHeight),
-      };
-    }
-    remaining -= pageHeight;
-  }
-
-  const lastPage = pages[pages.length - 1];
-  return {
-    pageIndex: pages.length - 1,
-    page: lastPage,
-    yOnPagePt: clamp(lastPage.heightPt, 0, lastPage.heightPt),
-  };
-}
-
+/**
+ * Extracts sourceSpan from a draw operation if present.
+ */
 function getSourceSpan(op: DrawOp): SourceSpanLike | null {
   if (!('sourceSpan' in op)) {
     return null;
@@ -1205,6 +214,9 @@ function getSourceSpan(op: DrawOp): SourceSpanLike | null {
   return { start: normalizedStart, end: normalizedEnd };
 }
 
+/**
+ * Calculates the Y range (top to bottom) of a draw operation in points.
+ */
 function getOpYRangePt(op: DrawOp): { yStartPt: number; yEndPt: number } | null {
   switch (op.kind) {
     case 'glyph':
@@ -1248,6 +260,9 @@ function getOpYRangePt(op: DrawOp): { yStartPt: number; yEndPt: number } | null 
   }
 }
 
+/**
+ * Builds an array of character offsets where each line starts in the source.
+ */
 function getSourceLineStarts(source: string): number[] {
   const lineStarts: number[] = [0];
   for (let i = 0; i < source.length; i += 1) {
@@ -1268,6 +283,9 @@ function getSourceLineStarts(source: string): number[] {
   return lineStarts;
 }
 
+/**
+ * Converts a character offset to a 1-based line number using binary search.
+ */
 function offsetToLineNumber(offset: number, lineStarts: readonly number[]): number {
   if (lineStarts.length === 0) {
     return 1;

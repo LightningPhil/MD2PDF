@@ -61,7 +61,8 @@ Outputs to `dist/` directory.
 4. Select files from the collapsible left panel.
 5. Use `Save` to download the currently selected Markdown file.
 6. Use `Export PDF` to generate a PDF of the current document.
-7. Use `Math` toggle to switch between render modes.
+7. Use `Settings` to configure typography (font sizes, heading scales, spacing).
+8. Use `Headers/Footers` to add page headers and footers.
 
 ## Supported Markdown
 

@@ -8,6 +8,12 @@
 </head>
 <body>
     <div id="app">
+        <button id="settingsBtn" class="settings-toggle" aria-label="Open settings" title="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"></path>
+            </svg>
+        </button>
         <button id="themeToggle" class="theme-toggle" aria-label="Switch to light theme" title="Switch to light theme">
             <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8Z"></path>
@@ -34,44 +40,6 @@
                 <button id="saveBtn">Save</button>
                 <button id="exportPdfBtn">Export PDF</button>
                 <button id="headerFooterBtn">Headers &amp; Footers</button>
-                <button id="settingsBtn">Settings</button>
-                <label class="control-label">
-                    Font:
-                    <select id="fontSizeSelect">
-                        <option value="10">10px</option>
-                        <option value="12" selected>12px</option>
-                        <option value="14">14px</option>
-                        <option value="16">16px</option>
-                        <option value="18">18px</option>
-                        <option value="20">20px</option>
-                    </select>
-                </label>
-                <label class="control-label">
-                    Margin:
-                    <select id="marginSelect">
-                        <option value="15">Narrow (15mm)</option>
-                        <option value="20" selected>Medium (20mm)</option>
-                        <option value="25.4">Wide (1 inch)</option>
-                        <option value="30">Extra Wide (30mm)</option>
-                    </select>
-                </label>
-                <label class="control-label">
-                    Page:
-                    <select id="pageSizeSelect">
-                        <option value="a4" selected>A4 (210 x 297mm)</option>
-                        <option value="letter">Letter (8.5 x 11in)</option>
-                        <option value="legal">Legal (8.5 x 14in)</option>
-                        <option value="tabloid">Tabloid (11 x 17in)</option>
-                        <option value="a3">A3 (297 x 420mm)</option>
-                    </select>
-                </label>
-                <label class="control-label">
-                    Emoji:
-                    <select id="emojiModeSelect">
-                        <option value="preserve" selected>Preserve</option>
-                        <option value="suppress">Suppress</option>
-                    </select>
-                </label>
                 <label class="control-label">
                     Click Sync:
                     <select id="clickSyncModeSelect">
@@ -249,7 +217,7 @@ Goal:
                         <ol>
                             <li>Load one or more markdown files with <strong>Upload</strong>, or start typing immediately.</li>
                             <li>Choose the active document in <strong>Open Files</strong> (left panel).</li>
-                            <li>Set <strong>Font</strong>, <strong>Margin</strong>, and <strong>Page size</strong> in the toolbar.</li>
+                            <li>Click the <strong>⚙ (cog icon)</strong> to open <strong>Document Settings</strong> and configure page size, margins, fonts, and typography.</li>
                             <li>Use preview controls: <strong>Fit Width</strong>, <strong>Fit Page</strong>, <strong>Zoom +/-</strong>.</li>
                             <li>Click <strong>Export PDF</strong> and choose current file or all open files.</li>
                         </ol>
@@ -400,7 +368,7 @@ $$
                                 <li>Prefer one table per topic rather than very large tables.</li>
                                 <li>Break oversized code samples into logical chunks.</li>
                                 <li>Use sectioning with <code>##</code> and <code>###</code> to stabilize page flow.</li>
-                            <li>Use medium margins and 12px font for balanced readability and page density.</li>
+                            <li>Adjust <strong>Base Font</strong>, <strong>Margins</strong>, and <strong>Page Size</strong> via the settings (⚙) to balance readability and page density.</li>
                         </ul>
                     </section>
 
@@ -523,11 +491,44 @@ $$
     <div id="settingsModalBackdrop" class="settings-modal-backdrop" hidden>
         <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
             <div class="settings-modal-header">
-                <h2 id="settingsModalTitle">Typography &amp; Formatting</h2>
+                <h2 id="settingsModalTitle">Document Settings</h2>
                 <button id="settingsModalCloseBtn" class="settings-close-btn" type="button" aria-label="Close settings dialog" title="Close">&times;</button>
             </div>
 
             <div class="settings-modal-body">
+                <!-- Page Layout Section -->
+                <fieldset class="settings-group">
+                    <legend>Page Layout</legend>
+                    <div class="settings-grid">
+                        <label class="settings-field">
+                            <span class="settings-label">Page Size</span>
+                            <select id="settingsPageSize">
+                                <option value="a4" selected>A4 (210 × 297mm)</option>
+                                <option value="letter">Letter (8.5 × 11in)</option>
+                                <option value="legal">Legal (8.5 × 14in)</option>
+                                <option value="tabloid">Tabloid (11 × 17in)</option>
+                                <option value="a3">A3 (297 × 420mm)</option>
+                            </select>
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">Margins</span>
+                            <select id="settingsMargin">
+                                <option value="15">Narrow (15mm)</option>
+                                <option value="20" selected>Medium (20mm)</option>
+                                <option value="25.4">Wide (1 inch)</option>
+                                <option value="30">Extra Wide (30mm)</option>
+                            </select>
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-label">Emoji Handling</span>
+                            <select id="settingsEmojiMode">
+                                <option value="preserve" selected>Preserve</option>
+                                <option value="suppress">Suppress</option>
+                            </select>
+                        </label>
+                    </div>
+                </fieldset>
+
                 <!-- Font Sizes Section -->
                 <fieldset class="settings-group">
                     <legend>Font Sizes</legend>
@@ -542,7 +543,7 @@ $$
                         </label>
                         <label class="settings-field">
                             <span class="settings-label">Tables (pt)</span>
-                            <input id="settingsTableFontSize" type="number" min="6" max="24" step="1" value="11">
+                            <input id="settingsTableFontSize" type="number" min="6" max="24" step="1" value="10">
                         </label>
                         <label class="settings-field">
                             <span class="settings-label">Header/Footer (pt)</span>

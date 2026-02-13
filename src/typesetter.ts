@@ -19,24 +19,11 @@ import {
   deriveSourceMappingFromSourceSpans,
   type SourceMappingEntry,
 } from './source-mapping/index.js';
+import { PAGE_SIZES, type PageSizeKey, type PageSizeSpec } from './types/page.js';
 
-export type PageSizeKey = 'a4' | 'letter' | 'legal' | 'tabloid' | 'a3';
 export type EmojiMode = 'preserve' | 'suppress';
 
-export interface PageSizeSpec {
-  widthMm: number;
-  heightMm: number;
-}
-
-export type { SourceMappingEntry };
-
-const PAGE_SIZES: Record<PageSizeKey, PageSizeSpec> = {
-  a4: { widthMm: 210, heightMm: 297 },
-  letter: { widthMm: 215.9, heightMm: 279.4 },
-  legal: { widthMm: 215.9, heightMm: 355.6 },
-  tabloid: { widthMm: 279.4, heightMm: 431.8 },
-  a3: { widthMm: 297, heightMm: 420 },
-};
+export type { PageSizeKey, PageSizeSpec, SourceMappingEntry };
 
 interface FontSet {
   text: FontSpec;
