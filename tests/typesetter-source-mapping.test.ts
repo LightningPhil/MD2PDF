@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const typesetMock = vi.fn();
 
-vi.mock('canvadoc-typesetter', () => ({
+vi.mock('../src/typesetter-engine/index.js', () => ({
   createTypesetter: vi.fn(() => ({
     typeset: typesetMock,
     renderToCanvas: vi.fn(),

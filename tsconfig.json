@@ -4,9 +4,6 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "baseUrl": ".",
-    "paths": {
-      "canvadoc-typesetter": ["src/canvadoc-typesetter/index.ts"]
-    },
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

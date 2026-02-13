@@ -254,17 +254,76 @@ export class MarkdownEditor {
     };
   }
 
+  /**
+   * Scroll so the given character position is visible.
+   * Uses a mirror element to accurately measure where wrapped lines actually render.
+   */
   private scrollLineIntoView(lineNumber: number): void {
-    const computed = window.getComputedStyle(this.textarea);
-    const parsedLineHeight = Number.parseFloat(computed.lineHeight);
-    const parsedFontSize = Number.parseFloat(computed.fontSize);
-    const lineHeight = Number.isFinite(parsedLineHeight)
-      ? parsedLineHeight
-      : (Number.isFinite(parsedFontSize) ? parsedFontSize * 1.45 : 20);
+    const resolved = this.resolveLineRange(lineNumber);
+    if (!resolved) {
+      return;
+    }
 
-    const targetTop = Math.max(0, (lineNumber - 1) * lineHeight);
+    const charPosition = resolved.start;
+    const targetTop = this.measureCharacterTop(charPosition);
+    
+    // Center the target line roughly 35% from the top of the visible viewport
     const offsetTop = Math.max(0, targetTop - (this.textarea.clientHeight * 0.35));
     this.textarea.scrollTop = offsetTop;
+  }
+
+  /**
+   * Measures the actual Y position of a character in the textarea by creating
+   * a hidden mirror div that replicates the textarea's text layout.
+   */
+  private measureCharacterTop(charPosition: number): number {
+    const text = this.textarea.value;
+    const computed = window.getComputedStyle(this.textarea);
+
+    // Create a mirror div that replicates textarea text rendering
+    const mirror = document.createElement('div');
+    mirror.style.position = 'absolute';
+    mirror.style.top = '-9999px';
+    mirror.style.left = '-9999px';
+    mirror.style.visibility = 'hidden';
+    mirror.style.pointerEvents = 'none';
+
+    // Copy all relevant styles that affect text layout
+    mirror.style.width = `${this.textarea.clientWidth}px`;
+    mirror.style.font = computed.font;
+    mirror.style.fontSize = computed.fontSize;
+    mirror.style.fontFamily = computed.fontFamily;
+    mirror.style.fontWeight = computed.fontWeight;
+    mirror.style.fontStyle = computed.fontStyle;
+    mirror.style.lineHeight = computed.lineHeight;
+    mirror.style.letterSpacing = computed.letterSpacing;
+    mirror.style.wordSpacing = computed.wordSpacing;
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+    mirror.style.overflowWrap = 'break-word';
+    mirror.style.padding = computed.padding;
+    mirror.style.boxSizing = computed.boxSizing;
+    mirror.style.border = computed.border;
+    mirror.style.tabSize = computed.tabSize;
+
+    // Text before the target position
+    const beforeText = text.substring(0, charPosition);
+    const beforeNode = document.createTextNode(beforeText);
+    mirror.appendChild(beforeNode);
+
+    // Marker span at the target position
+    const marker = document.createElement('span');
+    marker.textContent = text[charPosition] || '\u200b'; // Zero-width space if at end
+    mirror.appendChild(marker);
+
+    document.body.appendChild(mirror);
+
+    // Measure the marker's position relative to the mirror's top
+    const markerTop = marker.offsetTop;
+
+    document.body.removeChild(mirror);
+
+    return markerTop;
   }
 
   private pulseEditorFocus(): void {

@@ -327,10 +327,6 @@ function layoutBlock(
 }
 
 function layoutParagraph(text: string, style: ParagraphStyle, state: LayoutState): void {
-  // Track Y position before layout
-  const startPageIndex = state.currentPage.index;
-  const startYPt = state.cursorYPt;
-
   const fragments = style.parseInline
     ? parseParagraphFragments(text, style, state)
     : [
@@ -346,17 +342,8 @@ function layoutParagraph(text: string, style: ParagraphStyle, state: LayoutState
         )
       ];
 
-  layoutFragmentsIntoLines(fragments, style, state);
-
-  // Track source line range after layout
-  const endYPt = state.cursorYPt - style.afterPt; // Exclude trailing spacing
-  trackSourceLineRange(
-    style.sourceSpan,
-    startPageIndex,
-    startYPt,
-    endYPt,
-    state
-  );
+  // Pass sourceSpan to fragment layout for per-line tracking
+  layoutFragmentsIntoLines(fragments, style, state, style.sourceSpan);
 }
 
 function parseParagraphFragments(
@@ -458,7 +445,8 @@ function parseParagraphFragments(
 function layoutFragmentsIntoLines(
   sourceFragments: InlineFragment[],
   style: ParagraphStyle,
-  state: LayoutState
+  state: LayoutState,
+  blockSourceSpan?: SourceSpan
 ): void {
   const fragments = sourceFragments.slice();
   const resolved = state.options.page.resolved;
@@ -556,6 +544,9 @@ function layoutFragmentsIntoLines(
 
     ensureVerticalSpace(lineHeightPt, state);
 
+    // Track actual Y position after potential page break
+    const lineYStartPt = state.cursorYPt;
+
     const extraLead = Math.max(0, lineHeightPt - naturalHeight);
     const baselinePt = state.cursorYPt + extraLead / 2 + lineAscent;
     let xPt = resolved.contentXPt + indentPt;
@@ -566,6 +557,16 @@ function layoutFragmentsIntoLines(
     }
 
     state.cursorYPt += lineHeightPt;
+
+    // Track source line range for this rendered line
+    trackSourceLineRange(
+      blockSourceSpan,
+      state.currentPage.index,
+      lineYStartPt,
+      state.cursorYPt,
+      state
+    );
+
     lineIndex += 1;
   }
 

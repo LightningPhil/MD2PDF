@@ -31,7 +31,7 @@
   },
   "notes": {
     "fromProjectPlan": [
-      "Canvas-based markdown preview using integrated canvadoc-typesetter engine",
+      "Canvas-based markdown preview using integrated typesetter engine",
       "Split-pane UI with draggable divider, zoom controls, and theme toggle",
       "Multi-document workflow with upload, select, rename, close, and page counts",
       "Client-side PDF export (no headless browser required)"

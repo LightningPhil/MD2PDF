@@ -2,7 +2,7 @@
  * Source mapping resolution module - maps source markdown lines to rendered PDF positions.
  */
 import { clamp } from '../utils/math.js';
-import type { DrawOp, PageLayout } from 'canvadoc-typesetter';
+import type { DrawOp, PageLayout } from '../typesetter-engine/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
