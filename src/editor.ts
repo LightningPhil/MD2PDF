@@ -1,6 +1,11 @@
+type EditorSnapshot = { content: string; start: number; end: number };
+
 export class MarkdownEditor {
   private textarea: HTMLTextAreaElement;
   private changeCallbacks: ((content: string) => void)[] = [];
+  private undoStack: EditorSnapshot[] = [];
+  private redoStack: EditorSnapshot[] = [];
+  private lastState: EditorSnapshot;
   
   constructor(textareaId: string) {
     const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -8,6 +13,7 @@ export class MarkdownEditor {
       throw new Error(`Textarea element with id '${textareaId}' not found`);
     }
     this.textarea = textarea;
+    this.lastState = this.snapshot();
     this.setupEventListeners();
   }
   
@@ -24,6 +30,9 @@ export class MarkdownEditor {
    */
   setContent(content: string): void {
     this.textarea.value = content;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.lastState = this.snapshot();
     this.notifyChange();
   }
   
@@ -57,8 +66,7 @@ export class MarkdownEditor {
    * Clears the editor content
    */
   clear(): void {
-    this.textarea.value = '';
-    this.notifyChange();
+    this.replaceRange(0, this.textarea.value.length, '');
   }
   
   /**
@@ -66,17 +74,49 @@ export class MarkdownEditor {
    * @param text - Text to insert
    */
   insertText(text: string): void {
-    const start = this.textarea.selectionStart;
-    const end = this.textarea.selectionEnd;
-    const currentValue = this.textarea.value;
-    
-    this.textarea.value = currentValue.substring(0, start) + text + currentValue.substring(end);
-    
-    // Set cursor position after inserted text
-    const newPosition = start + text.length;
-    this.textarea.selectionStart = newPosition;
-    this.textarea.selectionEnd = newPosition;
-    
+    this.replaceRange(this.textarea.selectionStart, this.textarea.selectionEnd, text);
+  }
+
+  getSelection(): { start: number; end: number } {
+    return { start: this.textarea.selectionStart, end: this.textarea.selectionEnd };
+  }
+
+  setSelection(start: number, end = start): void {
+    this.textarea.setSelectionRange(start, end);
+  }
+
+  replaceRange(start: number, end: number, text: string, selectStart = text.length, selectEnd = selectStart): void {
+    this.recordHistory(this.undoStack, this.snapshot());
+    this.redoStack = [];
+    this.textarea.setRangeText(text, start, end, 'end');
+    this.textarea.setSelectionRange(start + selectStart, start + selectEnd);
+    this.lastState = this.snapshot();
+    this.notifyChange();
+  }
+
+  undo(): void { this.restoreHistory(this.undoStack, this.redoStack); }
+  redo(): void { this.restoreHistory(this.redoStack, this.undoStack); }
+
+  private snapshot(): EditorSnapshot {
+    return { content: this.textarea.value, ...this.getSelection() };
+  }
+
+  private recordHistory(stack: EditorSnapshot[], state: EditorSnapshot): void {
+    stack.push(state);
+    // Embedded images can make a document large; bound history by size as well as count.
+    let characters = stack.reduce((total, entry) => total + entry.content.length, 0);
+    while (stack.length > 1 && (stack.length > 200 || characters > 10_000_000)) {
+      characters -= stack.shift()!.content.length;
+    }
+  }
+
+  private restoreHistory(from: typeof this.undoStack, to: typeof this.undoStack): void {
+    const state = from.pop();
+    if (!state) return;
+    this.recordHistory(to, this.snapshot());
+    this.textarea.value = state.content;
+    this.textarea.setSelectionRange(state.start, state.end);
+    this.lastState = this.snapshot();
     this.notifyChange();
   }
   
@@ -92,59 +132,47 @@ export class MarkdownEditor {
    * @param wrapper - Text to wrap around selection (e.g., '**' for bold)
    */
   wrapSelection(wrapper: string): void {
-    const start = this.textarea.selectionStart;
-    const end = this.textarea.selectionEnd;
-    const selectedText = this.getSelectedText();
-    
-    if (selectedText) {
-      this.textarea.value = 
-        this.textarea.value.substring(0, start) + 
-        wrapper + selectedText + wrapper + 
-        this.textarea.value.substring(end);
-      
-      // Select the wrapped text
-      this.textarea.selectionStart = start;
-      this.textarea.selectionEnd = end + (wrapper.length * 2);
-    } else {
-      // If no selection, just insert the wrapper and position cursor in middle
-      this.insertText(wrapper + wrapper);
-      const position = start + wrapper.length;
-      this.textarea.selectionStart = position;
-      this.textarea.selectionEnd = position;
-    }
-    
-    this.notifyChange();
+    const { start, end } = this.getSelection();
+    const selected = this.getSelectedText();
+    this.replaceRange(start, end, wrapper + selected + wrapper,
+      selected ? 0 : wrapper.length,
+      selected ? selected.length + wrapper.length * 2 : wrapper.length);
   }
-  
   /**
    * Sets up event listeners for the textarea
    */
   private setupEventListeners(): void {
     // Listen for input changes
     this.textarea.addEventListener('input', () => {
+      this.recordHistory(this.undoStack, this.lastState);
+      this.redoStack = [];
+      this.lastState = this.snapshot();
       this.notifyChange();
+    });
+    this.textarea.addEventListener('beforeinput', (event) => {
+      if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+        event.preventDefault();
+        if (event.inputType === 'historyUndo') this.undo();
+        else this.redo();
+        return;
+      }
+      this.lastState = this.snapshot();
     });
     
     // Handle tab key for indentation
     this.textarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        if (e.key.toLowerCase() === 'y' || e.shiftKey) this.redo();
+        else this.undo();
+        return;
+      }
       if (e.key === 'Tab') {
         e.preventDefault();
         this.insertText('  '); // Insert two spaces
       }
     });
     
-    // Auto-resize textarea (optional)
-    this.textarea.addEventListener('input', () => {
-      this.autoResize();
-    });
-  }
-  
-  /**
-   * Auto-resizes the textarea to fit content
-   */
-  private autoResize(): void {
-    this.textarea.style.height = 'auto';
-    this.textarea.style.height = this.textarea.scrollHeight + 'px';
   }
   
   /**

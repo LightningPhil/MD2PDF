@@ -61,7 +61,13 @@ export function paginate(content: HTMLElement, pageHeightPx: number): HTMLElemen
     while (queue.length > 0) {
       const block = queue.shift()!;
 
-      if (shouldKeepWithNext(block) && queue.length > 0) {
+      if (block.dataset.pageBreak === 'true') {
+        if (currentBlocks.length > 0) pages.push(createPageContent(currentBlocks));
+        currentBlocks = [];
+        continue;
+      }
+
+      if (shouldKeepWithNext(block) && queue.length > 0 && queue[0].dataset.pageBreak !== 'true') {
         const nextBlock = queue[0];
         if (fitsOnPage([...currentBlocks, block, nextBlock], pageHeightPx, measureContainer)) {
           currentBlocks.push(block, queue.shift()!);
@@ -219,7 +225,7 @@ function splitListByItems(
     return null;
   }
 
-  return { head, tail };
+  return mapSplitSource(list, head, tail);
 }
 
 function createListFragment(sourceList: HTMLElement, items: HTMLElement[], offset: number): HTMLElement {
@@ -276,7 +282,7 @@ function splitContainerByChildren(
     return null;
   }
 
-  return { head, tail };
+  return mapSplitSource(container, head, tail);
 }
 
 function createContainerFragment(sourceContainer: HTMLElement, children: HTMLElement[]): HTMLElement {
@@ -361,6 +367,24 @@ function buildTextSplit(element: HTMLElement, breakpoint: TextBreakpoint): Split
     return null;
   }
 
+  return mapSplitSource(element, head, tail);
+}
+
+/** Retain approximate source ranges for each fragment of a split Markdown block. */
+function mapSplitSource(original: HTMLElement, head: HTMLElement, tail: HTMLElement): SplitResult {
+  const start = Number(original.dataset.sourceStart), end = Number(original.dataset.sourceEnd);
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+    const total = (original.textContent || '').length;
+    const ratio = total ? (head.textContent || '').length / total : .5;
+    const boundary = Math.min(end - 1, Math.max(start + 1, Math.round(start + (end - start) * ratio)));
+    for (const [fragment, from, to] of [[head, start, boundary], [tail, boundary, end]] as const) {
+      for (const child of [fragment, ...Array.from(fragment.querySelectorAll<HTMLElement>('[data-source-start]'))]) {
+        if (Number(child.dataset.sourceStart) === start && Number(child.dataset.sourceEnd) === end) {
+          child.dataset.sourceStart = String(from); child.dataset.sourceEnd = String(to);
+        }
+      }
+    }
+  }
   return { head, tail };
 }
 
@@ -372,6 +396,11 @@ function collectTextBreakpoints(element: HTMLElement): TextBreakpoint[] {
   while (current) {
     const node = current as Text;
     const text = node.textContent ?? '';
+
+    if (node.parentElement?.closest('.rendered-equation, .katex, math, svg')) {
+      current = walker.nextNode();
+      continue;
+    }
 
     if (text.trim().length > 0) {
       const whitespaceRegex = /\s+/g;
@@ -479,9 +508,9 @@ function createMeasureContainer(): HTMLElement {
     overflow: visible;
     padding: 0;
     margin: 0;
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: var(--document-font, Georgia, "Times New Roman", serif);
     font-size: ${fontSize}px;
-    line-height: 1.6;
+    line-height: var(--document-leading, 1.6);
     white-space: normal;
     box-sizing: border-box;
   `;

@@ -1,4 +1,13 @@
+import { defaultProject, type LatexProject } from './latex-project.js';
+import { LatexWorkspace, isLatex, compileLatex } from './latex.js';
 import { MarkdownEditor } from './editor.js';
+import { AuthoringTools } from './authoring.js';
+import * as bundledKatex from 'katex';
+import 'katex/dist/katex.min.css';
+import { WorkspaceTools } from './workspace-tools.js';
+import { WorkspaceStore, type WorkspaceState, type StoredDocument } from './storage.js';
+import { applyDocumentStyle, decodeDocument, encodeDocument, DEFAULT_SETTINGS, type DocumentSettings } from './document.js';
+import { inspectOutput, waitForImages, type ExportIssue } from './preflight.js';
 import { renderMarkdown } from './markdown.js';
 import { PageManager } from './pages.js';
 import {
@@ -16,12 +25,10 @@ declare global {
   }
 }
 
-interface ManagedDocument {
-  id: string;
-  filename: string;
-  content: string;
-  pageCount: number;
-}
+// Use the same bundled renderer for authoring, page previews and PDF export.
+window.katex = bundledKatex;
+
+type ManagedDocument = StoredDocument;
 
 interface ExportPayloadBase {
   pageSize: string;
@@ -31,6 +38,7 @@ interface ExportPayloadBase {
 }
 
 interface ExportDocumentPayload {
+  latexProject?: LatexProject;
   filename: string;
   content: string;
 }
@@ -64,8 +72,16 @@ class ExportCanceledError extends Error {}
 
 class MD2PDFApp {
   private editor!: MarkdownEditor;
+  private latex!: LatexWorkspace;
   private pageManager!: PageManager;
   private ui!: UIController;
+  private tools!: WorkspaceTools;
+  private store?: WorkspaceStore;
+  private restoring = true;
+  private saveTimer = 0;
+  private saveRevision = 0;
+  private savedRevision = 0;
+  private loadedImages = new Set<string>();
 
   private documents: ManagedDocument[] = [];
   private activeDocumentId: string | null = null;
@@ -77,14 +93,66 @@ class MD2PDFApp {
   constructor() {
     try {
       this.editor = new MarkdownEditor('markdownEditor');
+      new AuthoringTools(this.editor);
       this.pageManager = new PageManager('previewContainer');
       this.ui = new UIController();
+      this.tools = new WorkspaceTools(this.editor, {
+        getSettings: () => ({ ...(this.getActiveDocument()?.settings ?? DEFAULT_SETTINGS) }),
+        setSettings: settings => {
+          let active = this.getActiveDocument();
+          if (!active) { active = this.createDocument(this.nextUntitledFilename(), this.editor.getContent()); this.documents.push(active); this.activeDocumentId = active.id; }
+          active.settings = settings;
+          this.renderActiveDocument(); this.refreshDocumentList();
+        },
+        getFilename: () => this.getActiveDocument()?.filename ?? 'Untitled.md',
+        importFiles: files => this.addUploadedDocuments(files),
+        newDocument: () => {
+          this.syncActiveDocumentContentFromEditor();
+          const next = this.createDocument(this.makeUniqueFilename(this.nextUntitledFilename()), '');
+          this.documents.push(next); this.switchActiveDocument(next.id, true); this.editor.focus();
+        },
+        checkOutput: all => this.checkOutput(all),
+        goToIssue: issue => {
+          if (issue.documentId && issue.documentId !== this.activeDocumentId) this.switchActiveDocument(issue.documentId);
+          if (issue.sourceFile && issue.line) this.latex.goToSource(issue.sourceFile, issue.line);
+          else this.tools.navigation.goTo(issue.source);
+        },
+      });
 
+      this.latex = new LatexWorkspace(this.editor,
+        (filename, content) => this.addUploadedDocuments([{ filename, content }]),
+        latex => {
+          this.syncActiveDocumentContentFromEditor();
+          let active = this.getActiveDocument();
+          if (!active) { active = this.createDocument(this.nextUntitledFilename(), this.editor.getContent()); this.documents.push(active); this.activeDocumentId = active.id; }
+          active.filename = this.makeUniqueFilename(active.filename.replace(/\.(md|markdown|tex)$/i, '') + (latex ? '.tex' : '.md'), active.id);
+          this.renderActiveDocument(); this.refreshDocumentList();
+        }, {
+          get: () => this.getActiveDocument()?.latexProject ?? defaultProject(),
+          set: project => { const active = this.getActiveDocument(); if (active) { active.latexProject = project; this.renderActiveDocument(); this.scheduleSave(); } },
+          import: (source, project) => {
+            this.addUploadedDocuments([{ filename: project.root.split('/').pop() || 'Project.tex', content: source }]);
+            const active = this.getActiveDocument()!; active.latexProject = project; this.renderActiveDocument(); this.scheduleSave();
+          },
+        });
       this.initializeDocuments();
       this.setupEventHandlers();
-      this.renderActiveDocument();
-      this.recomputeInactivePageCounts();
-      this.refreshDocumentList();
+      void this.restoreWorkspace();
+
+      const equationDialog = document.querySelector<HTMLDialogElement>('.equation-dialog')!;
+      equationDialog.addEventListener('equation-open', () => {
+        void import('./visual-math.js').then(module => module.installVisualMath(equationDialog)).catch(error => console.error('Visual math editor could not load:', error));
+      });
+      const textarea = document.getElementById('markdownEditor') as HTMLTextAreaElement;
+      for (const event of ['click', 'keyup', 'select', 'scroll']) textarea.addEventListener(event, () => this.scheduleSave());
+      window.addEventListener('pointerup', () => this.scheduleSave());
+      document.getElementById('sidebarToggleBtn')!.addEventListener('click', () => this.scheduleSave());
+      document.getElementById('syncScroll')!.addEventListener('click', () => this.scheduleSave());
+      window.addEventListener('pagehide', () => { void this.flushSave(); });
+      window.addEventListener('beforeunload', event => {
+        if (this.savedRevision !== this.saveRevision) { void this.flushSave(); event.preventDefault(); event.returnValue = ''; }
+      });
+      void document.fonts.ready.then(() => { if (!this.restoring) this.renderActiveDocument(); });
 
       console.log('MD2PDF App initialized successfully');
     } catch (error) {
@@ -102,6 +170,11 @@ class MD2PDFApp {
         return;
       }
 
+      const decoded = decodeDocument(content);
+      if (decoded.hasSettings) {
+        this.isSwitchingDocument = true; this.editor.setContent(decoded.content); this.isSwitchingDocument = false;
+        content = decoded.content;
+      }
       let active = this.getActiveDocument();
       if (!active && content.trim()) {
         active = this.createDocument(this.nextUntitledFilename(), content);
@@ -117,6 +190,7 @@ class MD2PDFApp {
       }
 
       active.content = content;
+      if (decoded.hasSettings) active.settings = decoded.settings;
       this.renderActiveDocument();
       this.refreshDocumentList();
     });
@@ -141,12 +215,15 @@ class MD2PDFApp {
       this.syncActiveDocumentContentFromEditor();
       const active = this.getActiveDocument();
       return {
-        content: active?.content ?? '',
+        content: isLatex(active?.filename) ? active!.content : encodeDocument(active?.content ?? '', active?.settings ?? DEFAULT_SETTINGS),
         filename: active ? this.ensureMarkdownFilename(active.filename) : 'document.md',
       };
     });
 
-    this.ui.onExportContextRequest(() => this.buildExportModalContext());
+    this.ui.onExportContextRequest(() => {
+      void this.tools.refreshExportChecks();
+      return this.buildExportModalContext();
+    });
 
     this.ui.onExportStart((scope) => {
       void this.exportDocuments(scope);
@@ -165,6 +242,8 @@ class MD2PDFApp {
     });
 
     this.ui.onSettingsChange(() => {
+      const active = this.getActiveDocument();
+      if (active) active.settings = { ...active.settings, fontSize: this.ui.getFontSize(), margin: this.ui.getMargin(), pageSize: this.ui.getPageSize(), preset: 'custom' };
       this.renderActiveDocument();
       this.recomputeInactivePageCounts();
       this.refreshDocumentList();
@@ -221,10 +300,13 @@ class MD2PDFApp {
 
     this.isSwitchingDocument = true;
     this.editor.setContent(target.content);
+    this.editor.setSelection(target.cursor.start, target.cursor.end);
     this.isSwitchingDocument = false;
 
     this.renderActiveDocument();
     this.refreshDocumentList();
+    const textarea = document.getElementById('markdownEditor') as HTMLTextAreaElement;
+    textarea.scrollTop = target.cursor.scrollTop;
   }
 
   private renameDocument(documentId: string, requestedFilename: string): void {
@@ -247,6 +329,7 @@ class MD2PDFApp {
 
     target.filename = unique;
     this.refreshDocumentList();
+    this.renderActiveDocument();
     this.ui.showNotification(`Renamed to ${unique}`, 'success');
   }
 
@@ -265,6 +348,7 @@ class MD2PDFApp {
 
     if (this.documents.length === 0) {
       this.activeDocumentId = null;
+      this.latex?.update('', '');
 
       this.isSwitchingDocument = true;
       this.editor.setContent('');
@@ -284,9 +368,11 @@ class MD2PDFApp {
 
       this.isSwitchingDocument = true;
       this.editor.setContent(replacement.content);
+      this.editor.setSelection(replacement.cursor.start, replacement.cursor.end);
       this.isSwitchingDocument = false;
 
       this.renderActiveDocument();
+      (document.getElementById('markdownEditor') as HTMLTextAreaElement).scrollTop = replacement.cursor.scrollTop;
     }
 
     this.refreshDocumentList();
@@ -299,6 +385,15 @@ class MD2PDFApp {
   private renderActiveDocument(): void {
     try {
       const active = this.getActiveDocument();
+      this.latex?.update(active?.filename ?? '', active?.content ?? '');
+      if (isLatex(active?.filename)) {
+        this.pageManager.updatePages(document.createElement('div'));
+        return;
+      }
+      const settings = active?.settings ?? DEFAULT_SETTINGS;
+      applyDocumentStyle(settings);
+      this.ui.setDocumentPageSettings(settings);
+      this.pageManager.setSettings(settings);
       if (!active) {
         this.pageManager.updatePages(document.createElement('div'));
         this.ui.refreshPreviewViewport();
@@ -306,7 +401,7 @@ class MD2PDFApp {
       }
 
       const markdown = active.content;
-      if (!markdown.trim()) {
+      if (!markdown.trim() && !settings.titlePage) {
         this.pageManager.updatePages(document.createElement('div'));
         active.pageCount = this.pageManager.getPageCount();
         this.ui.refreshPreviewViewport();
@@ -314,14 +409,17 @@ class MD2PDFApp {
       }
 
       const mathMode = this.pageManager.getMathMode();
-      const htmlContent = renderMarkdown(markdown, { mathMode: { type: mathMode } });
+      const htmlContent = renderMarkdown(markdown, { mathMode: { type: mathMode }, settings });
 
       this.pageManager.updatePages(htmlContent);
       active.pageCount = this.pageManager.getPageCount();
       this.ui.refreshPreviewViewport();
+      this.warmImages(htmlContent);
     } catch (error) {
       console.error('Error updating preview:', error);
       this.showError('Failed to update preview');
+    } finally {
+      this.tools?.refresh();
     }
   }
 
@@ -329,22 +427,29 @@ class MD2PDFApp {
     const activeId = this.activeDocumentId;
 
     this.documents.forEach((documentItem) => {
-      if (documentItem.id === activeId) {
+      if (documentItem.id === activeId || isLatex(documentItem.filename)) {
         return;
       }
 
-      documentItem.pageCount = this.calculatePageCountForMarkdown(documentItem.content);
+      documentItem.pageCount = this.calculatePageCountForMarkdown(documentItem.content, documentItem.settings);
     });
   }
 
-  private calculatePageCountForMarkdown(markdown: string): number {
+  private calculatePageCountForMarkdown(markdown: string, settings: DocumentSettings): number {
     if (!markdown.trim()) {
       return 1;
     }
 
     const mathMode = this.pageManager.getMathMode();
-    const htmlContent = renderMarkdown(markdown, { mathMode: { type: mathMode } });
-    return this.pageManager.calculatePageCount(htmlContent);
+    const savedStyle = document.documentElement.style.cssText;
+    const htmlContent = renderMarkdown(markdown, { mathMode: { type: mathMode }, settings });
+    try {
+      applyDocumentStyle(settings); this.ui.setDocumentPageSettings(settings);
+      return this.pageManager.calculatePageCount(htmlContent);
+    } finally {
+      this.ui.setDocumentPageSettings(this.getActiveDocument()?.settings ?? DEFAULT_SETTINGS);
+      document.documentElement.style.cssText = savedStyle;
+    }
   }
 
   private refreshDocumentList(): void {
@@ -356,6 +461,7 @@ class MD2PDFApp {
     }));
 
     this.ui.renderDocumentList(items);
+    this.scheduleSave();
   }
 
   private buildExportModalContext(): ExportModalContext {
@@ -385,14 +491,19 @@ class MD2PDFApp {
     }
 
     active.content = this.editor.getContent();
+    const textarea = document.getElementById('markdownEditor') as HTMLTextAreaElement;
+    active.cursor = { ...this.editor.getSelection(), scrollTop: textarea.scrollTop };
   }
 
   private createDocument(filename: string, content: string): ManagedDocument {
+    const decoded = decodeDocument(content);
     return {
       id: this.createDocumentId(),
       filename,
-      content,
+      content: decoded.content,
       pageCount: 1,
+      settings: decoded.hasSettings ? decoded.settings : { ...(this.getActiveDocument()?.settings ?? DEFAULT_SETTINGS) },
+      cursor: { start: 0, end: 0, scrollTop: 0 },
     };
   }
 
@@ -434,7 +545,7 @@ class MD2PDFApp {
       return this.nextUntitledFilename();
     }
 
-    if (/\.(md|markdown)$/i.test(trimmed)) {
+    if (/\.(md|markdown|tex)$/i.test(trimmed)) {
       return trimmed;
     }
 
@@ -473,11 +584,13 @@ class MD2PDFApp {
     const documents: ExportDocumentPayload[] = scope === 'current'
       ? [{
         filename: active?.filename ?? 'document.md',
-        content: active?.content ?? '',
+        latexProject: active?.latexProject,
+        content: isLatex(active?.filename) ? active!.content : encodeDocument(active?.content ?? '', active?.settings ?? DEFAULT_SETTINGS),
       }]
       : this.documents.map((documentItem) => ({
         filename: documentItem.filename,
-        content: documentItem.content,
+        latexProject: documentItem.latexProject,
+        content: isLatex(documentItem.filename) ? documentItem.content : encodeDocument(documentItem.content, documentItem.settings),
       }));
 
     if (documents.length === 0) {
@@ -759,6 +872,118 @@ class MD2PDFApp {
   private showError(message: string): void {
     this.ui.showNotification(message, 'error');
   }
+
+  private async restoreWorkspace(): Promise<void> {
+    const textarea = document.getElementById('markdownEditor') as HTMLTextAreaElement;
+    textarea.disabled = true;
+    document.body.classList.add('restoring-workspace');
+    try {
+      this.store = new WorkspaceStore();
+      const saved = await this.store.load();
+      if (saved) {
+        this.documents = saved.documents;
+        this.activeDocumentId = saved.activeDocumentId;
+        this.untitledCounter = saved.untitledCounter;
+        this.ui.restoreWorkspaceLayout(saved.split, saved.sidebarCollapsed);
+        this.tools.navigation.syncEnabled = saved.syncScroll;
+        this.tools.updateSyncButton();
+        const active = this.getActiveDocument();
+        this.isSwitchingDocument = true;
+        this.editor.setContent(active?.content ?? '');
+        this.editor.setSelection(active?.cursor.start ?? 0, active?.cursor.end ?? 0);
+        this.isSwitchingDocument = false;
+      }
+      this.tools.setStatus(saved ? 'Workspace restored · saved locally' : 'Autosave ready');
+    } catch (error) {
+      this.store = undefined;
+      this.tools.setStatus('Autosave unavailable · use Save to keep your work', true);
+      console.error('Workspace storage unavailable:', error);
+    } finally {
+      this.renderActiveDocument();
+      this.recomputeInactivePageCounts();
+      this.refreshDocumentList();
+      textarea.scrollTop = this.getActiveDocument()?.cursor.scrollTop ?? 0;
+      textarea.disabled = false;
+      this.restoring = false;
+      document.body.classList.remove('restoring-workspace');
+    }
+  }
+
+  private scheduleSave(): void {
+    if (this.restoring) return;
+    this.saveRevision++;
+    this.tools.setStatus(this.store ? 'Saving locally…' : 'Autosave unavailable · use Save', !this.store);
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => { void this.flushSave(); }, 250);
+  }
+
+  private async flushSave(): Promise<void> {
+    clearTimeout(this.saveTimer);
+    if (this.restoring || !this.store || this.savedRevision === this.saveRevision) return;
+    this.syncActiveDocumentContentFromEditor();
+    const revision = this.saveRevision;
+    const state: WorkspaceState = structuredClone({
+      version: 1,
+      documents: this.documents,
+      activeDocumentId: this.activeDocumentId,
+      untitledCounter: this.untitledCounter,
+      split: getComputedStyle(document.documentElement).getPropertyValue('--split-ratio').trim(),
+      sidebarCollapsed: document.getElementById('workspaceShell')!.classList.contains('sidebar-collapsed'),
+      syncScroll: this.tools.navigation.syncEnabled,
+    });
+    try {
+      await this.store.save(state);
+      this.savedRevision = Math.max(this.savedRevision, revision);
+      if (this.saveRevision === revision) this.tools.setStatus('Saved locally');
+    } catch (error) {
+      this.tools.setStatus('Local save failed · download your Markdown with Save', true);
+      console.error('Workspace save failed:', error);
+    }
+  }
+
+  private warmImages(content: HTMLElement): void {
+    content.querySelectorAll<HTMLImageElement>('img').forEach(image => {
+      if (!image.src || this.loadedImages.has(image.src)) return;
+      this.loadedImages.add(image.src);
+      const probe = new Image();
+      probe.onload = () => { if (!this.restoring) this.renderActiveDocument(); };
+      probe.src = image.src;
+    });
+  }
+
+  private async checkOutput(all: boolean): Promise<ExportIssue[]> {
+    this.syncActiveDocumentContentFromEditor();
+    const documents = structuredClone(all ? this.documents : this.getActiveDocument() ? [this.getActiveDocument()!] : []);
+    const issues: ExportIssue[] = [];
+    await document.fonts.ready;
+    for (const item of documents) {
+      if (isLatex(item.filename)) {
+        try {
+          const result = await compileLatex(item.content, item.latexProject);
+          issues.push(...result.diagnostics.map(issue => ({ message: issue.message, severity: issue.severity, sourceFile: issue.file || item.latexProject?.main || 'main.tex', line: issue.line, source: item.content.split('\n').slice(0, issue.line - 1).reduce((n, line) => n + line.length + 1, 0), documentId: item.id, filename: item.filename })));
+          if (!result.success && !result.diagnostics.length) issues.push({ message: result.log || 'Compilation failed.', severity: 'error', source: 0, documentId: item.id, filename: item.filename });
+        } catch (error) { issues.push({ message: String(error), severity: 'error', source: 0, documentId: item.id, filename: item.filename }); }
+        continue;
+      }
+      const content = renderMarkdown(item.content, { mathMode: { type: 'html' }, settings: item.settings });
+      await waitForImages(content);
+      const sandbox = document.createElement('div');
+      sandbox.id = `check-${crypto.randomUUID()}`;
+      sandbox.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden;';
+      document.body.append(sandbox);
+      const savedStyle = document.documentElement.style.cssText;
+      try {
+        applyDocumentStyle(item.settings); this.ui.setDocumentPageSettings(item.settings);
+        const manager = new PageManager(sandbox.id); manager.setSettings(item.settings); manager.updatePages(content);
+        issues.push(...inspectOutput(sandbox, item.content).map(issue => ({ ...issue, documentId: item.id, filename: item.filename })));
+      } finally {
+        sandbox.remove();
+        this.ui.setDocumentPageSettings(this.getActiveDocument()?.settings ?? DEFAULT_SETTINGS);
+        document.documentElement.style.cssText = savedStyle;
+      }
+    }
+    return issues;
+  }
 }
 
 function pathExtension(filename: string): string {
@@ -776,17 +1001,4 @@ if (document.readyState === 'loading') {
   });
 } else {
   new MD2PDFApp();
-}
-
-// Load KaTeX library if not already loaded
-if (typeof window !== 'undefined' && !window.katex) {
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js';
-  script.onload = () => {
-    console.log('KaTeX library loaded');
-  };
-  script.onerror = () => {
-    console.error('Failed to load KaTeX library');
-  };
-  document.head.appendChild(script);
 }

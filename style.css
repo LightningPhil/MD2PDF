@@ -922,3 +922,188 @@ body.export-modal-open {
         break-after: auto;
     }
 }
+
+/* Writing tools use the workspace theme; PDF page styles stay independent. */
+.formatting-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-2);
+}
+.formatting-toolbar button, .formatting-toolbar select,
+.equation-dialog button, .equation-dialog select {
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    padding: 6px 9px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.formatting-toolbar button:hover, .equation-dialog button:hover { background: var(--surface-3); }
+.formatting-toolbar [data-format='bold'] { font-weight: 800; }
+.formatting-toolbar [data-format='italic'] { font-style: italic; }
+.formatting-toolbar [data-format='strike'] { text-decoration: line-through; }
+.formatting-toolbar .equation-button, #insertEquation { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.editor-help { padding: 7px 12px; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+#markdownEditor { min-height: 0; overflow: auto; }
+.equation-dialog {
+    margin: auto;
+    width: min(680px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 24px 80px #0008;
+    padding: 0;
+}
+.equation-dialog::backdrop { background: #0009; }
+.equation-header { display: flex; align-items: flex-start; gap: 16px; padding: 22px; border-bottom: 1px solid var(--border-color); }
+.equation-header h2 { font-size: 20px; margin-bottom: 8px; }
+.equation-header p, #equationHelp { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.equation-header [data-close] { margin-left: auto; font-size: 20px; }
+.equation-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 10px; }
+.equation-body label, .equation-preview-label { font-size: 12px; font-weight: 600; }
+.equation-body select { width: 100%; padding: 9px; }
+.equation-symbols { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0; }
+.equation-structures { display: flex; flex-wrap: wrap; gap: 5px; }
+.equation-symbols button { font-size: 17px; min-width: 35px; }
+#equationSource { width: 100%; resize: vertical; min-height: 90px; padding: 12px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; font: 14px/1.6 Consolas, monospace; }
+.equation-preview { background: #fff; color: #171b24; border-radius: 6px; padding: 20px; min-height: 90px; overflow-x: auto; }
+.equation-error { color: #e88978; font-size: 12px; overflow-wrap: anywhere; }
+.equation-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 22px; border-top: 1px solid var(--border-color); background: var(--surface-2); }
+.equation-dialog button:disabled { opacity: .45; cursor: not-allowed; }
+.formatting-toolbar :focus-visible, .equation-dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media print { .equation-dialog, .formatting-toolbar, .editor-help { display: none !important; } }
+
+/* Document authoring and layout */
+.editor-pane > h3 { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#saveStatus { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+#saveStatus.save-error { color: #eea86e; }
+.writing-actions { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border-color); }
+.writing-actions button, .find-panel button, .tool-dialog button { background: var(--surface-1); border: 1px solid var(--border-color); border-radius: 5px; color: var(--text-primary); font: inherit; font-size: 12px; padding: 7px 9px; cursor: pointer; }
+.writing-actions button:hover, .find-panel button:hover, .tool-dialog button:hover { background: var(--surface-3); }
+.writing-actions button[aria-pressed='true'] { border-color: var(--accent); }
+.tool-dialog { margin: auto; width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 12px; padding: 0; box-shadow: 0 24px 80px #0008; }
+.tool-dialog::backdrop { background: #0009; }
+.tool-dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 20px; gap: 16px; border-bottom: 1px solid var(--border-color); }
+.tool-dialog h2 { font-size: 20px; }
+.tool-dialog-body { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.tool-dialog label, .find-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; }
+.tool-dialog input, .tool-dialog select, .find-panel input, .equation-dialog input { min-width: 0; width: 100%; border: 1px solid var(--border-color); border-radius: 5px; padding: 9px; background: var(--surface-2); color: var(--text-primary); font: inherit; font-size: 13px; }
+.tool-dialog input[type='color'] { height: 37px; padding: 3px; }
+.tool-dialog :focus-visible, .writing-actions :focus-visible, .find-panel :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.tool-inline { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.tool-inline > label { flex: 1; min-width: 140px; }
+.tool-help { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.tool-dialog fieldset { border: 1px solid var(--border-color); border-radius: 7px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.tool-dialog legend { font-size: 13px; font-weight: 600; padding: 0 6px; }
+.tool-dialog .check-label, .find-panel .check-label { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; }
+.tool-dialog .check-label input, .find-panel .check-label input { width: auto; }
+.tool-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--border-color); background: var(--surface-2); }
+.tool-dialog-actions [type='submit'] { border-color: var(--accent); color: var(--accent); }
+.tool-dialog-message { color: #eea86e; font-size: 12px; padding: 0 20px 12px; }
+.tool-dialog-message:empty { display: none; }
+.table-grid-scroll { overflow: auto; max-height: 45vh; }
+#tableGrid { border-collapse: collapse; min-width: 100%; }
+#tableGrid td, #tableGrid th { border: 1px solid var(--border-color); padding: 4px; min-width: 110px; }
+#tableGrid input { min-width: 100px; font-weight: normal; }
+#tableGrid select { max-width: calc(100% - 30px); }
+#tableGrid button { padding: 4px 7px; }
+#imagePreview { max-height: 180px; max-width: 100%; object-fit: contain; background: #fff; border-radius: 6px; }
+.find-panel { padding: 12px; border-bottom: 1px solid var(--border-color); background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+.find-panel[hidden] { display: none; }
+#findCount { font-size: 12px; margin-right: auto; color: var(--text-secondary); align-self: center; }
+.outline-panel { padding: 12px 0; border-top: 1px solid var(--border-color); max-height: 42%; overflow: auto; flex-shrink: 0; }
+.outline-panel h3 { font-size: 12px; color: var(--text-secondary); padding: 0 12px 8px; text-transform: uppercase; letter-spacing: .04em; }
+#documentOutline { font-size: 12px; color: var(--text-secondary); }
+#documentOutline button { display: block; width: 100%; background: none; color: var(--text-secondary); border: 0; text-align: left; padding: 7px 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#documentOutline button:hover { background: var(--surface-3); color: var(--text-primary); }
+.sidebar-collapsed .outline-panel { display: none; }
+body.focus-mode .document-sidebar, body.focus-mode .preview-pane, body.focus-mode .pane-divider { display: none; }
+body.focus-mode .workspace-shell, body.focus-mode .main-container { grid-template-columns: minmax(0, 1fr); }
+body.focus-mode .editor-pane { width: 100%; max-width: 1000px; margin: 0 auto; }
+body.focus-mode #markdownEditor { font-size: 16px; line-height: 1.8; }
+.restoring-workspace #app { pointer-events: none; }
+#exportChecks { border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 12px; }
+#exportChecks summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
+#exportCheckResults { max-height: 180px; overflow: auto; }
+.output-issue { display: block; width: 100%; padding: 8px; margin-top: 6px; text-align: left; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--border-color); border-left: 3px solid #d4a65a; border-radius: 4px; cursor: pointer; font: inherit; font-size: 12px; }
+.output-issue.error { border-left-color: #e88978; }
+.visual-math-controls { display: flex; flex-wrap: wrap; gap: 5px; }
+math-field { width: 100%; min-height: 64px; padding: 12px; background: white; color: #111; border-radius: 6px; border: 1px solid var(--border-color); font-size: 24px; --caret-color: #2463a6; --selection-background-color: #bed9fc; }
+.math-keyboard-host { position: relative; z-index: 3; }
+.equation-dialog { overflow-y: auto; }
+
+/* These same type and spacing rules are used by pagination measurements. */
+.page { height: calc(var(--page-height-mm, 297) * 1mm); }
+.page-content { font-family: var(--document-font, Georgia, 'Times New Roman', serif); line-height: var(--document-leading, 1.6); }
+.page-content p, .page-content li { font-family: inherit; line-height: inherit; }
+.page-content p, .page-content ul, .page-content ol, .page-content table { margin-bottom: var(--document-spacing, 1em); }
+.page-content p { text-align: start; }
+.page-content h1, .page-content h2, .page-content h3, .page-content h4, .page-content h5, .page-content h6 { font-family: var(--document-heading-font, Georgia, serif); color: var(--document-accent, #333); margin-top: .7em; }
+.page-content > :first-child { margin-top: 0; }
+.page-content blockquote, .page-content pre { border-left-color: var(--document-accent, #2463a6); }
+.page-content th { background: #f2f4f7; }
+:root[data-document-preset='notes'] .page-content th { background: #edf3e9; }
+:root[data-document-preset='technical'] .page-content th { background: #eaf1f7; }
+.page-content img { max-width: 100%; height: auto; object-fit: contain; }
+.page-content figure { margin: 1em 0; break-inside: avoid; }
+.page-content figcaption { text-align: center; font-size: .9em; color: #555; margin-top: .5em; }
+.page-content .equation-block { position: relative; padding-right: 2.5em; }
+.page-content .equation-block:not(:has(.equation-number)) { padding-right: 0; }
+.page-content .equation-number { position: absolute; top: 50%; right: 0; transform: translateY(-50%); margin: 0; color: #333; }
+.page-content .document-toc a { display: block; color: #222; padding: .4em 0; text-decoration: none; border-bottom: 1px dotted #ddd; }
+.document-title-page { padding-top: 45mm; text-align: center; }
+.page-content .document-title-page h1 { font-size: 2.8em; margin-bottom: 1em; }
+.page-content .document-title-page p { text-align: center; font-size: 1.2em; }
+.document-header, .document-footer { position: absolute; left: var(--page-margin, 20mm); right: var(--page-margin, 20mm); font: 10px/1.4 Arial, sans-serif; color: #666; overflow: hidden; white-space: nowrap; }
+.document-header { top: 7mm; }
+.document-footer { bottom: 9mm; right: 50mm; }
+.page-content .unresolved-reference { color: #b63725; }
+.page-content .editing-block { outline: 2px solid #6a9fe566; outline-offset: 4px; }
+.rendered-equation { cursor: pointer; }
+@media (max-width: 650px) { .tool-grid { grid-template-columns: 1fr; } .writing-actions { max-height: 110px; overflow-y: auto; } }
+@media print {
+  .tool-dialog, .writing-actions, .find-panel, .outline-panel, #saveStatus { display: none !important; }
+  .page-content .editing-block { outline: none; }
+  .rendered-equation { cursor: auto; }
+}
+.latex-source summary { font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text-secondary); padding-bottom: 7px; }
+.latex-source > label { display: none; }
+.equation-dialog .latex-source #equationSource { min-height: 70px; }
+.page-content .document-toc a { display: flex; justify-content: space-between; gap: 18px; }
+.toc-page-number { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+/* Native LaTeX source and compiled PDF mode. */
+.source-mode { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+#latexToolbar { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+#latexToolbar[hidden], #latexPreview[hidden] { display:none; }
+#latexPreview { padding:12px; flex:1; min-height:0; }
+#latexPreview pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:200px; overflow:auto; }
+#latexPreview > div button { display:block; text-align:left; margin:6px 0; max-width:100%; overflow-wrap:anywhere; }
+.latex-mode #formattingToolbar, .latex-mode #previewViewport, .latex-mode .editor-help,
+.latex-mode #documentLayout, .latex-mode #openImage, .latex-mode #openReferences,
+.latex-mode #insertPageBreak, .latex-mode #syncScroll, .latex-mode #savePackage,
+.latex-mode .outline-panel { display:none; }
+
+.latex-mode #mathToggle, .latex-mode .toolbar .control-label { display:none; }
+
+.source-mode { padding:10px 12px; margin:0; background:var(--surface-2); }
+.source-mode button, .source-mode select, #compileLatex { padding:7px 10px; border:1px solid var(--border-color); border-radius:6px; color:var(--text-primary); background:var(--surface-1); font:inherit; cursor:pointer; }
+#latexPreview { overflow:auto; }
+.latex-pdf-pages canvas { display:block; width:100%; height:auto; margin:12px auto; background:white; box-shadow:0 2px 8px #0003; }
+.latex-project-dialog { width:min(960px, 94vw); }
+.latex-project-dialog .tool-dialog-body { display:grid; gap:10px; }
+.latex-project-dialog label { display:flex; flex-direction:column; gap:4px; }
+.latex-project-dialog .project-actions { display:flex; gap:12px; flex-wrap:wrap; }
+#projectSource { font:14px/21px Consolas,monospace; width:100%; resize:vertical; min-height:240px; }
+.latex-pdf-pages canvas.synctex-target { outline:3px solid var(--accent); outline-offset:2px; }
+
+.latex-pdf-pages { position:relative; }
+.synctex-marker { position:absolute; width:45px; height:16px; background:#ffc80080; border:2px solid #bc7700; pointer-events:none; transform:translateY(-12px); }

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MD2PDF - Markdown to Paginated Preview</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -29,7 +28,7 @@
         <div class="toolbar">
             <h1>MD2PDF</h1>
             <div class="controls">
-                <input type="file" id="uploadFile" accept=".md,.txt" class="hidden-file-input" aria-label="Upload markdown file" multiple>
+                <input type="file" id="uploadFile" accept=".md,.markdown,.txt,.tex" class="hidden-file-input" aria-label="Upload Markdown or LaTeX files" multiple>
                 <button id="uploadBtn">Upload</button>
                 <button id="saveBtn">Save</button>
                 <button id="exportPdfBtn">Export PDF</button>
@@ -78,7 +77,9 @@
 
             <div id="mainContainer" class="main-container">
                 <div class="editor-pane">
-                    <h3>Markdown Editor</h3>
+                    <h3>Source Editor</h3>
+                    <div id="formattingToolbar" class="formatting-toolbar" role="group" aria-label="Markdown formatting"></div>
+                    <p class="editor-help">Select text to format · Place the cursor in an equation to edit it · Ctrl/Cmd+Shift+E</p>
                     <textarea id="markdownEditor" placeholder="Enter your markdown here...
 
 # Welcome to MD2PDF

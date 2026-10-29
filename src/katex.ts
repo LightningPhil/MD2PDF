@@ -69,8 +69,12 @@ export function renderMath(root: HTMLElement, mode: MathRenderMode = 'html'): vo
       });
 
       const wrapper = document.createElement(isDisplay ? 'div' : 'span');
+      for (const attribute of Array.from(placeholder.attributes)) {
+        if (attribute.name.startsWith('data-')) wrapper.setAttribute(attribute.name, attribute.value);
+      }
+      wrapper.classList.add('rendered-equation');
       if (isDisplay) {
-        wrapper.className = 'katex-display';
+        wrapper.classList.add('katex-display');
       }
       wrapper.innerHTML = rendered;
       placeholder.replaceWith(wrapper);

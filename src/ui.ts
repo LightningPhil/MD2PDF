@@ -294,6 +294,25 @@ export class UIController {
     return parseFloat(this.marginSelect.value || '20');
   }
 
+  setDocumentPageSettings(settings: { fontSize: number; margin: number; pageSize: PageSizeKey }): void {
+    for (const [select, value] of [[this.fontSizeSelect, settings.fontSize], [this.marginSelect, settings.margin]] as const) {
+      if (!Array.from(select.options).some(option => option.value === String(value))) select.add(new Option(String(value), String(value)));
+      select.value = String(value);
+    }
+    this.pageSizeSelect.value = settings.pageSize;
+    this.applySettings();
+  }
+
+  dismissExportDialog(): void { this.closeExportModal(); }
+
+  restoreWorkspaceLayout(split: string, collapsed: boolean): void {
+    const value = parseFloat(split);
+    this.setSplitPercent(Number.isFinite(value) ? value : 50);
+    this.isSidebarCollapsed = collapsed;
+    this.workspaceShell.classList.toggle('sidebar-collapsed', collapsed);
+    this.updateSidebarToggleButton();
+  }
+
   /**
    * Recomputes zoom/fit after pages are rendered or viewport changes.
    */
@@ -313,7 +332,7 @@ export class UIController {
     if (items.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'document-list-empty';
-      empty.textContent = 'No markdown files loaded.';
+      empty.textContent = 'No documents loaded.';
       this.documentList.appendChild(empty);
       return;
     }
@@ -337,7 +356,7 @@ export class UIController {
 
       const pageCount = document.createElement('span');
       pageCount.className = 'document-item-pages';
-      pageCount.textContent = `${Math.max(1, item.pageCount)}`;
+      pageCount.textContent = /\.tex$/i.test(item.filename) ? 'TeX' : `${Math.max(1, item.pageCount)}`;
 
       button.appendChild(name);
       button.appendChild(pageCount);
@@ -786,11 +805,11 @@ export class UIController {
     this.setExportProgress({
       processed: 0,
       total,
-      message: total === 0 ? 'No markdown files loaded' : 'Ready to export',
+      message: total === 0 ? 'No documents loaded' : 'Ready to export',
     });
     this.clearExportLog();
     this.setExportSummary(total === 0
-      ? 'Load or create at least one markdown file before exporting.'
+      ? 'Load or create at least one document before exporting.'
       : 'Choose what to export, then start. Progress updates will appear below while files are processed.');
   }
 
@@ -989,14 +1008,15 @@ export class UIController {
     return file.type === 'text/markdown'
       || file.type === 'text/plain'
       || file.name.toLowerCase().endsWith('.md')
-      || file.name.toLowerCase().endsWith('.markdown');
+      || file.name.toLowerCase().endsWith('.markdown')
+      || file.name.toLowerCase().endsWith('.tex');
   }
 
   private async readFiles(files: File[]): Promise<void> {
     const markdownFiles = files.filter((file) => this.isMarkdownFile(file));
 
     if (markdownFiles.length === 0) {
-      this.showNotification('Please select markdown (.md) files', 'error');
+      this.showNotification('Please select Markdown (.md) or LaTeX (.tex) files', 'error');
       return;
     }
 
@@ -1008,7 +1028,7 @@ export class UIController {
 
       const message = loadedFiles.length === 1
         ? `Loaded ${loadedFiles[0].filename}`
-        : `Loaded ${loadedFiles.length} markdown files`;
+        : `Loaded ${loadedFiles.length} documents`;
       this.showNotification(message, 'success');
     } catch (error) {
       console.error('File read error:', error);

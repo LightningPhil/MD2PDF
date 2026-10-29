@@ -1,5 +1,6 @@
 import { paginate } from './paginator.js';
 import { renderMath, MathRenderMode } from './katex.js';
+import { DEFAULT_SETTINGS, type DocumentSettings } from './document.js';
 
 const DEFAULT_PAGE_HEIGHT_MM = 297;
 const DEFAULT_MARGIN_MM = 20;
@@ -9,6 +10,7 @@ export class PageManager {
   private container: HTMLElement;
   private pages: HTMLElement[] = [];
   private mathMode: MathRenderMode = 'html';
+  private settings: DocumentSettings = { ...DEFAULT_SETTINGS };
   
   constructor(containerId: string) {
     const container = document.getElementById(containerId);
@@ -47,6 +49,8 @@ export class PageManager {
   getMathMode(): MathRenderMode {
     return this.mathMode;
   }
+
+  setSettings(settings: DocumentSettings): void { this.settings = settings; }
   
   /**
    * Gets the number of pages
@@ -84,7 +88,7 @@ export class PageManager {
       // Add page number (optional)
       const pageNumber = document.createElement('div');
       pageNumber.className = 'page-number';
-      pageNumber.textContent = `${index + 1}`;
+      pageNumber.textContent = this.settings.pageNumbers === 'total' ? `Page ${index + 1} of ${this.pages.length}` : `${index + 1}`;
       pageNumber.style.cssText = `
         position: absolute;
         bottom: 10mm;
@@ -93,9 +97,29 @@ export class PageManager {
         color: #666;
         font-family: Arial, sans-serif;
       `;
-      pageWrapper.appendChild(pageNumber);
+      if (this.settings.pageNumbers !== 'none') pageWrapper.appendChild(pageNumber);
+      for (const kind of ['header', 'footer'] as const) {
+        if (!this.settings[kind]) continue;
+        const runningText = document.createElement('div');
+        runningText.className = `document-${kind}`;
+        runningText.textContent = this.settings[kind].replace(/\{page\}/g, String(index + 1)).replace(/\{pages\}/g, String(this.pages.length));
+        pageWrapper.append(runningText);
+      }
       
       this.container.appendChild(pageWrapper);
+    });
+    const seenIds = new Set<string>();
+    this.container.querySelectorAll<HTMLElement>('[id]').forEach(element => {
+      if (seenIds.has(element.id)) element.removeAttribute('id');
+      else seenIds.add(element.id);
+    });
+    const pageElements = Array.from(this.container.querySelectorAll<HTMLElement>('.page'));
+    this.container.querySelectorAll<HTMLAnchorElement>('.document-toc a').forEach(link => {
+      const destination = Array.from(this.container.querySelectorAll<HTMLElement>('[id]')).find(element => element.id === link.hash.slice(1));
+      const page = destination?.closest<HTMLElement>('.page');
+      if (page) {
+        const number = document.createElement('span'); number.className = 'toc-page-number'; number.textContent = String(pageElements.indexOf(page) + 1); link.append(number);
+      }
     });
     
     // If no pages, show placeholder

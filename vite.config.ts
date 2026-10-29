@@ -1,3 +1,4 @@
+import { compileLatex, syncLatex } from './scripts/latex-compile.mjs';
 import { defineConfig, type Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { promises as fs } from 'node:fs';
@@ -7,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 interface ExportDocInput {
+  latexProject?: unknown;
   filename: string;
   content: string;
 }
@@ -61,6 +63,8 @@ interface ExportCoreResult {
 interface ExportSession {
   exportMarkdownToPdf(args: {
     markdownText: string;
+    sourceFilename?: string;
+    latexProject?: unknown;
     outputPath?: string;
     pageSizeKey?: string;
     fontSizePx?: number | null;
@@ -112,8 +116,11 @@ function normalizeMathMode(value: unknown): 'html' | 'svg' {
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let bodySize = 0;
 
   for await (const chunk of request) {
+    bodySize += Buffer.byteLength(chunk);
+    if (bodySize > 128 * 1024 * 1024) throw new Error('Request exceeds 128 MB.');
     if (typeof chunk === 'string') {
       chunks.push(Buffer.from(chunk));
       continue;
@@ -201,6 +208,7 @@ function parseSingleRequest(body: unknown): { document: ExportDocInput; settings
     document: {
       filename,
       content,
+      latexProject: raw.latexProject,
     },
     settings: parseExportPayload(raw),
   };
@@ -214,7 +222,7 @@ function parseAllRequest(body: unknown): { documents: ExportDocInput[]; settings
 
   const documentsRaw = Array.isArray(raw.documents) ? raw.documents : [];
   const documents = documentsRaw
-    .map((item) => {
+    .map((item): ExportDocInput | null => {
       const record = asRecord(item);
       if (!record) {
         return null;
@@ -222,6 +230,7 @@ function parseAllRequest(body: unknown): { documents: ExportDocInput[]; settings
       return {
         filename: String(record.filename || 'document.md'),
         content: String(record.content ?? record.markdown ?? ''),
+    latexProject: record.latexProject,
       };
     })
     .filter((item): item is ExportDocInput => item !== null);
@@ -248,6 +257,7 @@ function parseDocumentInput(value: unknown): ExportDocInput | null {
   return {
     filename: String(record.filename || 'document.md'),
     content: String(record.content ?? record.markdown ?? ''),
+    latexProject: record.latexProject,
   };
 }
 
@@ -486,6 +496,8 @@ async function handleSingleExport(request: IncomingMessage, response: ServerResp
   try {
     const result = await session.exportMarkdownToPdf({
       markdownText: document.content,
+          sourceFilename: document.filename,
+          latexProject: document.latexProject,
       pageSizeKey,
       fontSizePx: settings.fontSizePx,
       marginMm: settings.marginMm,
@@ -522,6 +534,8 @@ async function handleAllExport(request: IncomingMessage, response: ServerRespons
       const pdfName = makeUniqueFilename(ensurePdfFilename(document.filename), usedNames);
       const result = await session.exportMarkdownToPdf({
         markdownText: document.content,
+          sourceFilename: document.filename,
+          latexProject: document.latexProject,
         pageSizeKey,
         fontSizePx: settings.fontSizePx,
         marginMm: settings.marginMm,
@@ -577,6 +591,8 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
 
       const result = await session.exportMarkdownToPdf({
         markdownText: document.content,
+          sourceFilename: document.filename,
+          latexProject: document.latexProject,
         pageSizeKey,
         fontSizePx: request.settings.fontSizePx,
         marginMm: request.settings.marginMm,
@@ -627,6 +643,8 @@ async function runExportJob(job: ExportJob, request: ExportJobRequest, incomingR
 
         const result = await session.exportMarkdownToPdf({
           markdownText: document.content,
+          sourceFilename: document.filename,
+          latexProject: document.latexProject,
           pageSizeKey,
           fontSizePx: request.settings.fontSizePx,
           marginMm: request.settings.marginMm,
@@ -804,6 +822,14 @@ async function routeExportApi(
   const method = request.method || 'GET';
 
   try {
+    if (method === 'POST' && (pathname === '/api/latex/compile' || pathname === '/api/latex/sync')) {
+      const origin = request.headers.origin;
+      if (origin && new URL(origin).host !== request.headers.host) { sendJsonError(response, 403, 'Use the local editor to compile.'); return; }
+      const body = asRecord(await readJsonBody(request));
+      const result = pathname.endsWith('/sync') ? await syncLatex(body) : await compileLatex(body?.source, body?.project, body?.keepBuild === true);
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify(result)); return;
+    }
     if (method === 'POST' && pathname === '/api/export/pdf-single') {
       await handleSingleExport(request, response, basePath);
       return;

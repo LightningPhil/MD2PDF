@@ -1,3 +1,4 @@
+import { compileLatex } from './latex-compile.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -11,7 +12,7 @@ export const PAGE_SIZES = {
 
 export function normalizePageSizeKey(value) {
   const key = String(value || 'a4').toLowerCase();
-  if (!PAGE_SIZES[key]) {
+  if (!Object.prototype.hasOwnProperty.call(PAGE_SIZES, key)) {
     throw new Error(`Unsupported page size '${key}'. Allowed: ${Object.keys(PAGE_SIZES).join(', ')}`);
   }
   return key;
@@ -106,21 +107,39 @@ export async function createPdfExportSession(options = {}) {
 
   await page.goto(resolvedPreviewUrl, { waitUntil: 'networkidle' });
   await page.waitForSelector('#markdownEditor');
+  await page.waitForFunction(() => !document.body.classList.contains('restoring-workspace'));
 
   async function exportMarkdownToPdf({
     markdownText,
+    sourceFilename,
+    latexProject,
     outputPath,
     pageSizeKey = 'a4',
     fontSizePx,
     marginMm,
     mathMode = 'html',
   }) {
-    const normalizedPageSizeKey = normalizePageSizeKey(pageSizeKey);
+    if (/\.tex$/i.test(sourceFilename || '')) {
+      const result = await compileLatex(markdownText, latexProject);
+      if (!result.success) throw new Error(result.diagnostics.map(d => d.message).join('\n') || result.log);
+      const pdfBuffer = Buffer.from(result.pdfBase64, 'base64');
+      if (outputPath) { await ensureDirForFile(outputPath); await fs.writeFile(outputPath, pdfBuffer); }
+      return { outputPath: outputPath || null, pageSizeKey, pageSize: PAGE_SIZES[pageSizeKey], pdfBuffer };
+    }
+    let documentSettings = {};
+    const metadata = /^<!-- md2pdf:([^\n]+) -->/.exec(markdownText);
+    if (metadata) {
+      try {
+        const parsed = JSON.parse(metadata[1]);
+        if (parsed && typeof parsed === 'object') documentSettings = parsed;
+      } catch { /* Ordinary Markdown remains exportable. */ }
+    }
+    const normalizedPageSizeKey = normalizePageSizeKey(Object.prototype.hasOwnProperty.call(PAGE_SIZES, documentSettings.pageSize) ? documentSettings.pageSize : pageSizeKey);
     const pageSize = PAGE_SIZES[normalizedPageSizeKey];
     const resolvedOutputPath = outputPath ? path.resolve(outputPath) : null;
 
-    const normalizedFontSize = Number.isFinite(Number(fontSizePx)) ? Number(fontSizePx) : null;
-    const normalizedMarginMm = Number.isFinite(Number(marginMm)) ? Number(marginMm) : null;
+    const normalizedFontSize = Number.isFinite(Number(documentSettings.fontSize ?? fontSizePx)) ? Math.min(20, Math.max(10, Number(documentSettings.fontSize ?? fontSizePx))) : null;
+    const normalizedMarginMm = Number.isFinite(Number(documentSettings.margin ?? marginMm)) ? Math.min(30, Math.max(15, Number(documentSettings.margin ?? marginMm))) : null;
     const normalizedMathMode = String(mathMode || 'html').toLowerCase() === 'svg' ? 'svg' : 'html';
 
     await page.evaluate(({
@@ -227,7 +246,14 @@ export async function createPdfExportSession(options = {}) {
     });
 
     await page.waitForFunction(() => document.querySelectorAll('#previewContainer .page').length > 0);
-    await page.waitForTimeout(350);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await Promise.all(Array.from(document.querySelectorAll('#previewContainer img')).map(image => image.decode().catch(() => {})));
+      const textarea = document.getElementById('markdownEditor');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      document.title = document.querySelector('.document-title-page h1, .page-content h1')?.textContent || 'Document';
+    });
+    await page.waitForTimeout(150);
     await page.emulateMedia({ media: 'print' });
 
     if (resolvedOutputPath) {
@@ -245,6 +271,8 @@ export async function createPdfExportSession(options = {}) {
         left: '0mm',
       },
       printBackground: true,
+      outline: true,
+      tagged: true,
       preferCSSPageSize: true,
     });
 
