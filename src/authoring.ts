@@ -72,18 +72,6 @@ const templates: [string, string][] = [
   ['Aligned equations', '\\begin{aligned} y &= mx + b \\\\ z &= x^2 + y^2 \\end{aligned}'],
 ];
 
-export function latexEquationAt(content: string, start: number, end: number): ReturnType<typeof equationAt> {
-  const pattern = /\\begin\{equation\*?\}([\s\S]*?)\\end\{equation\*?\}|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)/g;
-  for (const match of content.matchAll(pattern)) {
-    const from = match.index!;
-    if (start < from || start >= from + match[0].length || end > from + match[0].length) continue;
-    const source = match[1] ?? match[2] ?? match[3];
-    const label = /\\label\{([^}]+)\}/.exec(source)?.[1];
-    return { start: from, end: from + match[0].length, source: source.replace(/\\label\{[^}]+\}/g, '').trim(), display: match[3] === undefined, label };
-  }
-  return equationAt(content, start, end);
-}
-
 export class AuthoringTools {
   private dialog: HTMLDialogElement;
   private source: HTMLTextAreaElement;
@@ -206,7 +194,6 @@ export class AuthoringTools {
     this.dialog.querySelector('#equationLabel')!.addEventListener('input', () => this.updatePreview());
     this.insert.addEventListener('click', () => this.commit());
     document.getElementById('markdownEditor')!.addEventListener('keydown', (e) => {
-      if (document.body.classList.contains('latex-mode')) return;
       const event = e as KeyboardEvent;
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
       const key = event.key.toLowerCase();
@@ -220,8 +207,7 @@ export class AuthoringTools {
 
   private open(): void {
     this.range = this.editor.getSelection();
-    const locate = document.body.classList.contains('latex-mode') ? latexEquationAt : equationAt;
-    const existing = locate(this.editor.getContent(), this.range.start, this.range.end);
+    const existing = equationAt(this.editor.getContent(), this.range.start, this.range.end);
     this.source.value = existing?.source ?? (this.editor.getSelectedText().trim() || 'f(x) = x^2');
     this.display.value = existing ? (existing.display ? 'display' : 'inline') : 'display';
     this.dialog.querySelector<HTMLInputElement>('#equationLabel')!.value = existing?.label ?? '';
@@ -265,9 +251,7 @@ export class AuthoringTools {
       const prefix = !before || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
       const suffix = after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
       const label = this.dialog.querySelector<HTMLInputElement>('#equationLabel')!.value;
-      text = document.body.classList.contains('latex-mode')
-        ? prefix + '\\begin{equation}\n' + source + (label ? `\n\\label{${label}}` : '') + '\n\\end{equation}' + suffix
-        : prefix + '$$\n' + source + '\n$$' + (label ? ` {#${label}}` : '') + suffix;
+      text = prefix + '$$\n' + source + '\n$$' + (label ? ` {#${label}}` : '') + suffix;
     }
     this.editor.replaceRange(start, end, text);
     this.dialog.close();

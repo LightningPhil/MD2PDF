@@ -7,15 +7,15 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "export:pdf": "node scripts/export-pdf.mjs",
-    "export:pdf:batch": "node scripts/export-pdf-batch.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "node tests/workspace.e2e.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:latex": "node tests/latex.e2e.mjs",
-    "test:latex:native": "node tests/latex-project-native.mjs"
+    "build:pages": "tsc && vite build --mode pages",
+    "test:pages": "node tests/pages.e2e.mjs",
+    "prebuild": "node scripts/license-notices.mjs",
+    "prebuild:pages": "node scripts/license-notices.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
@@ -33,9 +33,13 @@
     "jszip": "^3.10.2",
     "katex": "^0.16.0",
     "marked": "^12.0.0",
-    "mathlive": "^0.111.1",
-    "pdfjs-dist": "^6.4.299"
+    "mathlive": "^0.111.1"
   },
   "author": "Philip Leichauer",
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://lightningphil.github.io/MD2PDF/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LightningPhil/MD2PDF.git"
+  }
 }

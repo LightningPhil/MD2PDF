@@ -75,13 +75,11 @@ export class MediaTools {
     });
     const textarea = document.getElementById('markdownEditor')!;
     textarea.addEventListener('paste', event => {
-      if (document.body.classList.contains('latex-mode')) return;
       const paste = event as ClipboardEvent;
       const file = Array.from(paste.clipboardData?.files ?? []).find(f => f.type.startsWith('image/'));
       if (file) { event.preventDefault(); this.openImage(); void this.loadImage(file); }
     });
     textarea.addEventListener('drop', event => {
-      if (document.body.classList.contains('latex-mode')) return;
       const drop = event as DragEvent;
       const file = Array.from(drop.dataTransfer?.files ?? []).find(f => f.type.startsWith('image/'));
       if (file) { event.preventDefault(); event.stopPropagation(); this.openImage(); void this.loadImage(file); }

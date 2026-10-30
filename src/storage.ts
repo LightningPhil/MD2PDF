@@ -1,8 +1,6 @@
-import type { LatexProject } from './latex-project.js';
 import { normalizeSettings, type DocumentSettings } from './document.js';
 export interface StoredDocument {
   id: string; filename: string; content: string; pageCount: number; settings: DocumentSettings;
-  latexProject?: LatexProject;
   cursor: { start: number; end: number; scrollTop: number };
 }
 export interface WorkspaceState {

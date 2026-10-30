@@ -1080,30 +1080,14 @@ math-field { width: 100%; min-height: 64px; padding: 12px; background: white; co
 .page-content .document-toc a { display: flex; justify-content: space-between; gap: 18px; }
 .toc-page-number { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
-/* Native LaTeX source and compiled PDF mode. */
-.source-mode { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
-#latexToolbar { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
-#latexToolbar[hidden], #latexPreview[hidden] { display:none; }
-#latexPreview { padding:12px; flex:1; min-height:0; }
-#latexPreview pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:200px; overflow:auto; }
-#latexPreview > div button { display:block; text-align:left; margin:6px 0; max-width:100%; overflow-wrap:anywhere; }
-.latex-mode #formattingToolbar, .latex-mode #previewViewport, .latex-mode .editor-help,
-.latex-mode #documentLayout, .latex-mode #openImage, .latex-mode #openReferences,
-.latex-mode #insertPageBreak, .latex-mode #syncScroll, .latex-mode #savePackage,
-.latex-mode .outline-panel { display:none; }
+#hostingNotice { margin:0; padding:6px 14px; font-size:12px; color:var(--text-secondary); background:var(--surface-2); border-top:1px solid var(--border-color); }
+@media print {
+  body.browser-print-ready { height:auto!important; overflow:visible!important; background:white!important; margin:0!important; }
+  body.browser-print-ready > :not(#browserPrintOutput) { display:none!important; }
+  #browserPrintOutput { position:static!important; display:block!important; margin:0!important; padding:0!important; color:black; print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  #browserPrintOutput > section { display:block; margin:0; padding:0; }
+  #browserPrintOutput .page { margin:0!important; box-shadow:none!important; break-after:page; break-inside:avoid; }
+  #browserPrintOutput section:last-child .page:last-child { break-after:auto; }
+}
 
-.latex-mode #mathToggle, .latex-mode .toolbar .control-label { display:none; }
-
-.source-mode { padding:10px 12px; margin:0; background:var(--surface-2); }
-.source-mode button, .source-mode select, #compileLatex { padding:7px 10px; border:1px solid var(--border-color); border-radius:6px; color:var(--text-primary); background:var(--surface-1); font:inherit; cursor:pointer; }
-#latexPreview { overflow:auto; }
-.latex-pdf-pages canvas { display:block; width:100%; height:auto; margin:12px auto; background:white; box-shadow:0 2px 8px #0003; }
-.latex-project-dialog { width:min(960px, 94vw); }
-.latex-project-dialog .tool-dialog-body { display:grid; gap:10px; }
-.latex-project-dialog label { display:flex; flex-direction:column; gap:4px; }
-.latex-project-dialog .project-actions { display:flex; gap:12px; flex-wrap:wrap; }
-#projectSource { font:14px/21px Consolas,monospace; width:100%; resize:vertical; min-height:240px; }
-.latex-pdf-pages canvas.synctex-target { outline:3px solid var(--accent); outline-offset:2px; }
-
-.latex-pdf-pages { position:relative; }
-.synctex-marker { position:absolute; width:45px; height:16px; background:#ffc80080; border:2px solid #bc7700; pointer-events:none; transform:translateY(-12px); }
+.export-progress-panel, #exportLog, #exportCancelBtn { display:none!important; }

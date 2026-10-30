@@ -1,5 +1,4 @@
-import { defaultProject, type LatexProject } from './latex-project.js';
-import { LatexWorkspace, isLatex, compileLatex } from './latex.js';
+import { prepareBrowserPrint } from './browser-print.js';
 import { MarkdownEditor } from './editor.js';
 import { AuthoringTools } from './authoring.js';
 import * as bundledKatex from 'katex';
@@ -30,49 +29,8 @@ window.katex = bundledKatex;
 
 type ManagedDocument = StoredDocument;
 
-interface ExportPayloadBase {
-  pageSize: string;
-  fontSizePx: number;
-  marginMm: number;
-  mathMode: 'html' | 'svg';
-}
-
-interface ExportDocumentPayload {
-  latexProject?: LatexProject;
-  filename: string;
-  content: string;
-}
-
-interface ExportJobStartPayload extends ExportPayloadBase {
-  mode: ExportScope;
-  document?: ExportDocumentPayload;
-  documents?: ExportDocumentPayload[];
-  zipFilename?: string;
-}
-
-interface ExportJobStartResponse {
-  jobId: string;
-}
-
-interface ExportJobStatusResponse {
-  jobId: string;
-  state: 'queued' | 'running' | 'completed' | 'failed' | 'canceled';
-  processed: number;
-  total: number;
-  message: string;
-  artifactName: string | null;
-  nextCursor: number;
-  logEntries: string[];
-  error: string | null;
-  elapsedMs: number;
-  currentFileElapsedMs: number;
-}
-
-class ExportCanceledError extends Error {}
-
 class MD2PDFApp {
   private editor!: MarkdownEditor;
-  private latex!: LatexWorkspace;
   private pageManager!: PageManager;
   private ui!: UIController;
   private tools!: WorkspaceTools;
@@ -87,7 +45,6 @@ class MD2PDFApp {
   private activeDocumentId: string | null = null;
   private isSwitchingDocument = false;
   private isExporting = false;
-  private activeExportJobId: string | null = null;
   private untitledCounter = 1;
 
   constructor() {
@@ -114,27 +71,10 @@ class MD2PDFApp {
         checkOutput: all => this.checkOutput(all),
         goToIssue: issue => {
           if (issue.documentId && issue.documentId !== this.activeDocumentId) this.switchActiveDocument(issue.documentId);
-          if (issue.sourceFile && issue.line) this.latex.goToSource(issue.sourceFile, issue.line);
-          else this.tools.navigation.goTo(issue.source);
+          this.tools.navigation.goTo(issue.source);
         },
       });
 
-      this.latex = new LatexWorkspace(this.editor,
-        (filename, content) => this.addUploadedDocuments([{ filename, content }]),
-        latex => {
-          this.syncActiveDocumentContentFromEditor();
-          let active = this.getActiveDocument();
-          if (!active) { active = this.createDocument(this.nextUntitledFilename(), this.editor.getContent()); this.documents.push(active); this.activeDocumentId = active.id; }
-          active.filename = this.makeUniqueFilename(active.filename.replace(/\.(md|markdown|tex)$/i, '') + (latex ? '.tex' : '.md'), active.id);
-          this.renderActiveDocument(); this.refreshDocumentList();
-        }, {
-          get: () => this.getActiveDocument()?.latexProject ?? defaultProject(),
-          set: project => { const active = this.getActiveDocument(); if (active) { active.latexProject = project; this.renderActiveDocument(); this.scheduleSave(); } },
-          import: (source, project) => {
-            this.addUploadedDocuments([{ filename: project.root.split('/').pop() || 'Project.tex', content: source }]);
-            const active = this.getActiveDocument()!; active.latexProject = project; this.renderActiveDocument(); this.scheduleSave();
-          },
-        });
       this.initializeDocuments();
       this.setupEventHandlers();
       void this.restoreWorkspace();
@@ -154,6 +94,12 @@ class MD2PDFApp {
       });
       void document.fonts.ready.then(() => { if (!this.restoring) this.renderActiveDocument(); });
 
+      {
+        const note = document.createElement('p'); note.id = 'hostingNotice';
+        note.textContent = 'Markdown PDFs: Print → Save as PDF. Files stay in this browser; save a Markdown file or package ZIP to move between PCs. No account or server required.';
+        const sourceLink = document.createElement('a'); sourceLink.href = 'https://github.com/LightningPhil/MD2PDF'; sourceLink.textContent = ' Source · MIT license'; sourceLink.target = '_blank'; sourceLink.rel = 'noopener noreferrer'; note.append(sourceLink);
+        document.getElementById('app')!.append(note);
+      }
       console.log('MD2PDF App initialized successfully');
     } catch (error) {
       console.error('Failed to initialize MD2PDF App:', error);
@@ -215,7 +161,7 @@ class MD2PDFApp {
       this.syncActiveDocumentContentFromEditor();
       const active = this.getActiveDocument();
       return {
-        content: isLatex(active?.filename) ? active!.content : encodeDocument(active?.content ?? '', active?.settings ?? DEFAULT_SETTINGS),
+        content: /\.tex$/i.test(active?.filename ?? '') ? active!.content : encodeDocument(active?.content ?? '', active?.settings ?? DEFAULT_SETTINGS),
         filename: active ? this.ensureMarkdownFilename(active.filename) : 'document.md',
       };
     });
@@ -229,9 +175,6 @@ class MD2PDFApp {
       void this.exportDocuments(scope);
     });
 
-    this.ui.onExportCancel(() => {
-      void this.cancelActiveExport();
-    });
 
     this.ui.onMathModeChange((mode) => {
       this.pageManager.setMathMode(mode);
@@ -348,7 +291,6 @@ class MD2PDFApp {
 
     if (this.documents.length === 0) {
       this.activeDocumentId = null;
-      this.latex?.update('', '');
 
       this.isSwitchingDocument = true;
       this.editor.setContent('');
@@ -385,11 +327,6 @@ class MD2PDFApp {
   private renderActiveDocument(): void {
     try {
       const active = this.getActiveDocument();
-      this.latex?.update(active?.filename ?? '', active?.content ?? '');
-      if (isLatex(active?.filename)) {
-        this.pageManager.updatePages(document.createElement('div'));
-        return;
-      }
       const settings = active?.settings ?? DEFAULT_SETTINGS;
       applyDocumentStyle(settings);
       this.ui.setDocumentPageSettings(settings);
@@ -427,7 +364,7 @@ class MD2PDFApp {
     const activeId = this.activeDocumentId;
 
     this.documents.forEach((documentItem) => {
-      if (documentItem.id === activeId || isLatex(documentItem.filename)) {
+      if (documentItem.id === activeId) {
         return;
       }
 
@@ -552,321 +489,20 @@ class MD2PDFApp {
     return `${trimmed}.md`;
   }
 
-  private toPdfFilename(filename: string): string {
-    const markdownName = this.ensureMarkdownFilename(filename);
-    const extension = pathExtension(markdownName);
-    const stem = markdownName.slice(0, markdownName.length - extension.length);
-    return `${stem}.pdf`;
-  }
-
-  private getExportPayloadBase(): ExportPayloadBase {
-    return {
-      pageSize: this.ui.getPageSize(),
-      fontSizePx: this.ui.getFontSize(),
-      marginMm: this.ui.getMargin(),
-      mathMode: this.ui.getMathMode(),
-    };
-  }
-
   private async exportDocuments(scope: ExportScope): Promise<void> {
-    if (this.isExporting) {
-      return;
-    }
-
+    if (this.isExporting) return;
     this.syncActiveDocumentContentFromEditor();
-
-    const active = this.getActiveDocument();
-    if (scope === 'current' && !active) {
-      this.showError('No active markdown file to export');
-      return;
-    }
-
-    const documents: ExportDocumentPayload[] = scope === 'current'
-      ? [{
-        filename: active?.filename ?? 'document.md',
-        latexProject: active?.latexProject,
-        content: isLatex(active?.filename) ? active!.content : encodeDocument(active?.content ?? '', active?.settings ?? DEFAULT_SETTINGS),
-      }]
-      : this.documents.map((documentItem) => ({
-        filename: documentItem.filename,
-        latexProject: documentItem.latexProject,
-        content: isLatex(documentItem.filename) ? documentItem.content : encodeDocument(documentItem.content, documentItem.settings),
-      }));
-
-    if (documents.length === 0) {
-      this.showError('No markdown files to export');
-      return;
-    }
-
-    const totalFiles = scope === 'all' ? documents.length : 1;
-
-    this.ui.clearExportLog();
-    this.ui.setExportProgress({
-      processed: 0,
-      total: totalFiles,
-      message: 'Preparing export job...',
-    });
-    this.ui.setExportSummary(
-      scope === 'all'
-        ? `Exporting ${documents.length} markdown files to a ZIP archive.`
-        : `Exporting ${documents[0].filename} to PDF.`,
-    );
-    this.ui.appendExportLog('Preparing export job...');
-
-    await this.runExport(async () => {
-      const payload: ExportJobStartPayload = {
-        ...this.getExportPayloadBase(),
-        mode: scope,
-        document: scope === 'current' ? documents[0] : undefined,
-        documents: scope === 'all' ? documents : undefined,
-        zipFilename: scope === 'all' ? 'md2pdf-export.zip' : undefined,
-      };
-
-      const start = await this.postJson<ExportJobStartResponse>('/api/export/job/start', payload);
-      this.activeExportJobId = start.jobId;
-      this.ui.appendExportLog(`Export job started (${start.jobId.slice(0, 8)}).`);
-
-      const finalStatus = await this.pollExportJob(start.jobId, totalFiles);
-      if (finalStatus.state === 'canceled') {
-        this.ui.setExportSummary('Export canceled.');
-        throw new ExportCanceledError('Export canceled.');
-      }
-
-      if (finalStatus.state === 'failed') {
-        const message = finalStatus.error || 'Export failed';
-        this.ui.setExportSummary(`Export failed: ${message}`);
-        throw new Error(message);
-      }
-
-      const artifact = await this.getExportArtifact(start.jobId);
-      const fallbackName = scope === 'all'
-        ? 'md2pdf-export.zip'
-        : this.toPdfFilename(documents[0].filename);
-      const filename = this.extractFilenameFromContentDisposition(artifact.contentDisposition)
-        || finalStatus.artifactName
-        || fallbackName;
-
-      this.downloadBlob(artifact.blob, filename);
-      this.ui.appendExportLog(`Downloaded ${filename}.`);
-      this.ui.setExportProgress({
-        processed: Math.max(finalStatus.total, totalFiles),
-        total: Math.max(finalStatus.total, totalFiles, 1),
-        message: `Export complete: ${filename}`,
-        totalElapsedMs: finalStatus.elapsedMs,
-        currentFileElapsedMs: 0,
-      });
-      this.ui.setExportSummary(
-        scope === 'all'
-          ? `Finished exporting ${documents.length} files to ${filename}.`
-          : `Finished exporting ${filename}.`,
-      );
-      this.ui.showNotification(
-        scope === 'all'
-          ? `Exported ${documents.length} files to ${filename}`
-          : `Exported ${filename}`,
-        'success',
-      );
-    });
-  }
-
-  private async cancelActiveExport(): Promise<void> {
-    if (!this.isExporting || !this.activeExportJobId) {
-      return;
-    }
-
+    const selected = scope === 'all' ? this.documents : this.getActiveDocument() ? [this.getActiveDocument()!] : [];
+    this.isExporting = true; this.ui.setExportBusy(true);
     try {
-      await this.postJson('/api/export/job/cancel', { jobId: this.activeExportJobId });
-      this.ui.appendExportLog('Cancel requested. Waiting for current file to finish...');
-      this.ui.setExportSummary('Cancel requested. Finishing current task...');
+      this.ui.setExportSummary('Preparing pages. Choose Save as PDF in the print dialog, with browser headers and footers turned off.');
+      await prepareBrowserPrint(selected.map(item => ({ filename: item.filename, content: encodeDocument(item.content, item.settings) })));
+      this.ui.setExportBusy(false); this.ui.dismissExportDialog();
+      window.print();
     } catch (error) {
-      console.error('Cancel export error:', error);
-      const message = error instanceof Error ? error.message : 'Failed to cancel export';
-      this.showError(message);
-    }
-  }
-
-  private async pollExportJob(jobId: string, fallbackTotal: number): Promise<ExportJobStatusResponse> {
-    let cursor = 0;
-
-    while (true) {
-      const status = await this.getJson<ExportJobStatusResponse>(
-        `/api/export/job/status?jobId=${encodeURIComponent(jobId)}&cursor=${cursor}`,
-      );
-
-      cursor = status.nextCursor;
-      status.logEntries.forEach((entry) => {
-        this.ui.appendExportLog(entry);
-      });
-
-      const total = Math.max(1, status.total || fallbackTotal);
-      const processed = Math.max(0, Math.min(status.processed, total));
-      this.ui.setExportProgress({
-        processed,
-        total,
-        message: status.message || this.describeExportState(status.state),
-        totalElapsedMs: status.elapsedMs,
-        currentFileElapsedMs: status.currentFileElapsedMs,
-      });
-
-      if (status.state === 'completed' || status.state === 'failed' || status.state === 'canceled') {
-        return status;
-      }
-
-      await this.delay(250);
-    }
-  }
-
-  private async runExport(task: () => Promise<void>): Promise<void> {
-    this.isExporting = true;
-    this.ui.setExportBusy(true);
-
-    try {
-      await task();
-    } catch (error) {
-      console.error('Export error:', error);
-      const message = error instanceof Error ? error.message : 'Export failed';
-
-      if (error instanceof ExportCanceledError) {
-        this.ui.setExportSummary(message);
-        this.ui.showNotification(message, 'info');
-      } else {
-        this.ui.setExportSummary(`Export failed: ${message}`);
-        this.showError(message);
-      }
-    } finally {
-      this.activeExportJobId = null;
-      this.isExporting = false;
-      this.ui.setExportBusy(false);
-    }
-  }
-
-  private describeExportState(state: ExportJobStatusResponse['state']): string {
-    if (state === 'queued') {
-      return 'Queued...';
-    }
-    if (state === 'running') {
-      return 'Processing files...';
-    }
-    if (state === 'completed') {
-      return 'Export complete';
-    }
-    if (state === 'canceled') {
-      return 'Export canceled';
-    }
-    return 'Export failed';
-  }
-
-  private async postJson<T = unknown>(url: string, payload: unknown): Promise<T> {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const errorText = await this.readErrorMessage(response);
-      throw new Error(errorText || `Request failed with status ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  }
-
-  private async getJson<T = unknown>(url: string): Promise<T> {
-    const response = await fetch(url, {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      const errorText = await this.readErrorMessage(response);
-      throw new Error(errorText || `Request failed with status ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  }
-
-  private async getExportArtifact(jobId: string): Promise<{ blob: Blob; contentDisposition: string | null }> {
-    const response = await fetch(`/api/export/job/download?jobId=${encodeURIComponent(jobId)}`, {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      const errorText = await this.readErrorMessage(response);
-      throw new Error(errorText || `Download failed with status ${response.status}`);
-    }
-
-    return {
-      blob: await response.blob(),
-      contentDisposition: response.headers.get('content-disposition'),
-    };
-  }
-
-  private async readErrorMessage(response: Response): Promise<string> {
-    const raw = (await response.text()).trim();
-    if (!raw) {
-      return '';
-    }
-
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const error = parsed.error;
-      if (typeof error === 'string' && error.trim()) {
-        return error;
-      }
-
-      const message = parsed.message;
-      if (typeof message === 'string' && message.trim()) {
-        return message;
-      }
-    } catch {
-      // Raw response was not JSON.
-    }
-
-    return raw;
-  }
-
-  private async delay(ms: number): Promise<void> {
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, ms);
-    });
-  }
-
-  private extractFilenameFromContentDisposition(contentDisposition: string | null): string | null {
-    if (!contentDisposition) {
-      return null;
-    }
-
-    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
-    if (utf8Match?.[1]) {
-      try {
-        return decodeURIComponent(utf8Match[1]);
-      } catch {
-        return utf8Match[1];
-      }
-    }
-
-    const basicMatch = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition);
-    if (basicMatch?.[1]) {
-      return basicMatch[1];
-    }
-
-    return null;
-  }
-
-  private downloadBlob(blob: Blob, filename: string): void {
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.style.display = 'none';
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
+      const message = error instanceof Error ? error.message : 'Could not prepare PDF pages.';
+      this.ui.setExportSummary(message); this.showError(message);
+    } finally { this.isExporting = false; this.ui.setExportBusy(false); }
   }
 
   private showError(message: string): void {
@@ -957,14 +593,6 @@ class MD2PDFApp {
     const issues: ExportIssue[] = [];
     await document.fonts.ready;
     for (const item of documents) {
-      if (isLatex(item.filename)) {
-        try {
-          const result = await compileLatex(item.content, item.latexProject);
-          issues.push(...result.diagnostics.map(issue => ({ message: issue.message, severity: issue.severity, sourceFile: issue.file || item.latexProject?.main || 'main.tex', line: issue.line, source: item.content.split('\n').slice(0, issue.line - 1).reduce((n, line) => n + line.length + 1, 0), documentId: item.id, filename: item.filename })));
-          if (!result.success && !result.diagnostics.length) issues.push({ message: result.log || 'Compilation failed.', severity: 'error', source: 0, documentId: item.id, filename: item.filename });
-        } catch (error) { issues.push({ message: String(error), severity: 'error', source: 0, documentId: item.id, filename: item.filename }); }
-        continue;
-      }
       const content = renderMarkdown(item.content, { mathMode: { type: 'html' }, settings: item.settings });
       await waitForImages(content);
       const sandbox = document.createElement('div');

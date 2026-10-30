@@ -356,7 +356,7 @@ export class UIController {
 
       const pageCount = document.createElement('span');
       pageCount.className = 'document-item-pages';
-      pageCount.textContent = /\.tex$/i.test(item.filename) ? 'TeX' : `${Math.max(1, item.pageCount)}`;
+      pageCount.textContent = `${Math.max(1, item.pageCount)}`;
 
       button.appendChild(name);
       button.appendChild(pageCount);
@@ -784,7 +784,7 @@ export class UIController {
   private applyExportContext(): void {
     const totalFiles = this.exportContext.totalFiles;
     this.exportScopeCurrentLabel.textContent = `Current file (${this.exportContext.activeFilename})`;
-    this.exportScopeAllLabel.textContent = `All open files (${totalFiles})`;
+    this.exportScopeAllLabel.textContent = `All open files (${totalFiles}, combined PDF)`;
 
     const noDocuments = totalFiles === 0;
     const disableAll = totalFiles <= 1;
@@ -810,7 +810,7 @@ export class UIController {
     this.clearExportLog();
     this.setExportSummary(total === 0
       ? 'Load or create at least one document before exporting.'
-      : 'Choose what to export, then start. Progress updates will appear below while files are processed.');
+      : 'Uses your browser print dialog. Choose Save as PDF, disable browser headers/footers, and keep scaling at 100%. All files produces one combined PDF.');
   }
 
   private getSelectedExportScope(): ExportScope {
@@ -1008,15 +1008,14 @@ export class UIController {
     return file.type === 'text/markdown'
       || file.type === 'text/plain'
       || file.name.toLowerCase().endsWith('.md')
-      || file.name.toLowerCase().endsWith('.markdown')
-      || file.name.toLowerCase().endsWith('.tex');
+      || file.name.toLowerCase().endsWith('.markdown');
   }
 
   private async readFiles(files: File[]): Promise<void> {
     const markdownFiles = files.filter((file) => this.isMarkdownFile(file));
 
     if (markdownFiles.length === 0) {
-      this.showNotification('Please select Markdown (.md) or LaTeX (.tex) files', 'error');
+      this.showNotification('Please select Markdown (.md) or text (.txt) files', 'error');
       return;
     }
 

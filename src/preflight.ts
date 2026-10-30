@@ -1,6 +1,6 @@
 import katex from 'katex';
 
-export interface ExportIssue { sourceFile?: string; line?: number; message: string; source: number; severity: 'warning' | 'error'; documentId?: string; filename?: string }
+export interface ExportIssue { message: string; source: number; severity: 'warning' | 'error'; documentId?: string; filename?: string }
 export async function waitForImages(root: HTMLElement, timeout = 2500): Promise<void> {
   await Promise.all(Array.from(root.querySelectorAll('img')).map(image => image.complete ? Promise.resolve() : new Promise<void>(resolve => {
     const finish = () => { clearTimeout(timer); image.removeEventListener('load', finish); image.removeEventListener('error', finish); resolve(); };

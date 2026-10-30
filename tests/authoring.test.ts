@@ -3,7 +3,7 @@ vi.hoisted(() => {
   if (!document.doctype) document.insertBefore(document.implementation.createDocumentType('html', '', ''), document.documentElement);
 });
 import { MarkdownEditor } from '../src/editor';
-import { AuthoringTools, equationAt, latexEquationAt, formatSelection } from '../src/authoring';
+import { AuthoringTools, equationAt, formatSelection } from '../src/authoring';
 
 describe('authoring tools', () => {
   let editor: MarkdownEditor;
@@ -133,20 +133,5 @@ describe('authoring tools', () => {
     placement.value = 'inline';
     placement.dispatchEvent(new Event('change'));
     expect(document.querySelector<HTMLButtonElement>('#insertEquation')!.disabled).toBe(true);
-  });
-});
-
-
-describe('native LaTeX equation editing', () => {
-  it('extracts a labelled native equation without duplicating the label', () => {
-    const source = String.raw`Before \begin{equation} E=mc^2 \label{eq:energy} \end{equation} after`;
-    expect(latexEquationAt(source, 30, 30)).toMatchObject({ source: 'E=mc^2', label: 'eq:energy', display: true });
-  });
-  it('recognizes native inline and display delimiters', () => {
-    expect(latexEquationAt(String.raw`\(x^2\)`, 3, 3)).toMatchObject({ source: 'x^2', display: false });
-    expect(latexEquationAt(String.raw`\[x^2\]`, 3, 3)).toMatchObject({ source: 'x^2', display: true });
-  });
-  it('does not consume an equation outside the selection', () => {
-    expect(latexEquationAt(String.raw`Text \[x^2\]`, 0, 0)).toBeNull();
   });
 });
