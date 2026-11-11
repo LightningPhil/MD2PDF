@@ -22,7 +22,7 @@ async function resolvePackage(name, from) {
   }
 }
 
-async function collect(name, from = '.') {
+async function collect(name, from = '.', includeDependencies = true) {
   const folder = await resolvePackage(name, from);
   if (visited.has(folder)) return; visited.add(folder);
   const info = JSON.parse(await fs.readFile(path.join(folder, 'package.json'), 'utf8'));
@@ -42,13 +42,17 @@ async function collect(name, from = '.') {
     notices += `\nREADME.md — License\n${license.trim()}\n`;
   }
   for (const file of licenseFiles) notices += `\n${file}\n${await fs.readFile(path.join(folder, file), 'utf8')}\n`;
-  for (const dependency of Object.keys(info.dependencies || {}).sort()) await collect(dependency, folder);
+  if (includeDependencies) {
+    for (const dependency of Object.keys(info.dependencies || {}).sort()) await collect(dependency, folder);
+  }
 }
 for (const dependency of Object.keys(manifest.dependencies).sort()) await collect(dependency);
+// Vite emits preload helpers into the website; its build-time dependency tree is not shipped.
+await collect('vite', '.', false);
 for (const file of ['katex-fonts-LICENSE.txt', 'pako-zlib-NOTICE.txt']) {
   notices += `\n\n${'='.repeat(72)}\n${file}\n${'='.repeat(72)}\n\n${await fs.readFile(new URL(`./licenses/${file}`, import.meta.url), 'utf8')}\n`;
 }
 await fs.mkdir('public', { recursive: true });
 await fs.writeFile('public/THIRD_PARTY_NOTICES.txt', notices);
 await fs.copyFile('LICENSE', 'public/LICENSE.txt');
-console.log(`Collected notices for ${visited.size} packages.`);
+console.log(`Collected notices for ${visited.size} packages (including Vite's emitted helpers).`);

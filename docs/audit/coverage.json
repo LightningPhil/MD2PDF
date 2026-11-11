@@ -6,7 +6,7 @@
   "sourceHashes": {
     "scripts/audit-probes.mjs": "238715f59aa698934548f30da11e2861c89b51eb4de93010e1c6bbc7eb9b9f76",
     "scripts/check-audit-coverage.mjs": "4f789bbbc6def07d63956993913cf5d636a4f8e36850543faa37c4f1ca364bf4",
-    "scripts/license-notices.mjs": "8c713624ffbc156919845245dfbef5ff0e3be620147dbbb571659812acbd2627",
+    "scripts/license-notices.mjs": "192abaa009ebdff467a75548b570e95694f4fb4afed7b471779360111bf56ca5",
     "scripts/update-audit-coverage.mjs": "04b6d0de7e1311d8f077e96629d6c1019da250d739697b809ddcd99734f1eabc",
     "src/authoring.ts": "b45464ecdd32364a588d443d4fb2d3a557dc88475a62c5c8d21e639ee3361524",
     "src/browser-print.ts": "c951c4d01b5bfda699467b2ba7a7ea6956d0687bbde46d07599561bb50d327ce",
