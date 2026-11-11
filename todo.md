@@ -4,10 +4,10 @@
 
 - [x] Verify repository visibility, MIT ownership and Pages settings.
 - [x] Complete dependency/font notices and expose them in the app.
-- [ ] Run release checks and deploy the current editor to GitHub Pages.
-- [ ] Verify the deployed site and downloadable license notices.
+- [x] Run release checks and deploy the current editor to GitHub Pages.
+- [x] Verify the deployed site and downloadable license notices.
 
-Release checks: 132 unit tests, TypeScript, the full workspace browser suite, Pages subpath browser suite (including license downloads), production Pages build and audit traceability pass. Runtime dependency audit reports zero known vulnerabilities. Notices cover 18 installed runtime packages plus KaTeX fonts and Pako's Zlib code. Deployment and live verification remain pending.
+Release checks: 132 unit tests, TypeScript, the full workspace browser suite, Pages subpath browser suite (including license downloads), production Pages build and audit traceability pass. Runtime dependency audit reports zero known vulnerabilities. Notices cover 18 installed runtime packages, Vite's emitted helpers, KaTeX fonts and Pako's Zlib code. GitHub build, deployment and live browser verification all passed in [run 43116157191](https://github.com/LightningPhil/MD2PDF/actions/runs/43116157191). The public site and both license downloads return HTTP 200; deployed notices match the build. The repository is public, GitHub recognizes MIT, and Pages enforces HTTPS. Runners are pinned to Ubuntu 24.04 because the locked Playwright does not support Ubuntu 26.04.
 
 ## [CMD:live-use-case-campaign] Browser acceptance and repairs
 
