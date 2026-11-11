@@ -223,6 +223,7 @@ export class AuthoringTools {
     try {
       if (!this.source.value.trim()) throw new Error('Enter an expression to preview.');
       const label = this.dialog.querySelector<HTMLInputElement>('#equationLabel')!;
+      label.value = label.value.trim();
       label.disabled = this.display.value === 'inline';
       if (!label.disabled && label.value && (!validLabel(label.value) || !label.value.startsWith('eq:'))) throw new Error('Use an equation label such as eq:energy (letters, numbers, hyphens, underscores).');
       if (/\\placeholder|#\?/.test(this.source.value)) throw new Error('Complete the empty boxes in the visual equation before inserting.');
@@ -253,7 +254,7 @@ export class AuthoringTools {
       const label = this.dialog.querySelector<HTMLInputElement>('#equationLabel')!.value;
       text = prefix + '$$\n' + source + '\n$$' + (label ? ` {#${label}}` : '') + suffix;
     }
-    this.editor.replaceRange(start, end, text);
     this.dialog.close();
+    this.editor.replaceRange(start, end, text);
   }
 }

@@ -37,7 +37,7 @@ export class PageManager {
   
   /**
    * Sets the math rendering mode
-   * @param mode - The math rendering mode ('html' or 'svg')
+   * @param mode - The supported HTML math rendering mode
    */
   setMathMode(mode: MathRenderMode): void {
     this.mathMode = mode;

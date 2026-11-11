@@ -1,4 +1,5 @@
 import katex from 'katex';
+import { marked } from 'marked';
 
 export interface ExportIssue { message: string; source: number; severity: 'warning' | 'error'; documentId?: string; filename?: string }
 export async function waitForImages(root: HTMLElement, timeout = 2500): Promise<void> {
@@ -17,7 +18,10 @@ export function inspectOutput(root: HTMLElement, source: string): ExportIssue[] 
   };
   root.querySelectorAll<HTMLElement>('[data-math]').forEach(element => {
     try {
-      katex.renderToString(decodeURIComponent(element.dataset.math || ''), { throwOnError: true, strict: false, trust: false });
+      katex.renderToString(decodeURIComponent(element.dataset.math || ''), {
+        displayMode: element.matches('.math-display-placeholder, .katex-display'),
+        throwOnError: true, strict: false, trust: false,
+      });
     } catch (error) {
       add(element, `Invalid equation: ${error instanceof Error ? error.message.replace(/^KaTeX parse error: /, '') : 'Check the expression.'}`, 'error');
     }
@@ -32,7 +36,7 @@ export function inspectOutput(root: HTMLElement, source: string): ExportIssue[] 
     if (!image.alt.trim()) add(image, 'Image is missing alternative text.');
   });
   root.querySelectorAll<HTMLElement>('.document-header, .document-footer').forEach(element => {
-    if (element.scrollWidth > element.clientWidth + 1) add(element, 'Running header or footer text is too long and will be clipped. Shorten it.');
+    if (element.scrollWidth > element.clientWidth + 1) add(element, 'Running header or footer text is too long and will be clipped. Shorten it.', 'error');
   });
   root.querySelectorAll<HTMLElement>('.page-content').forEach(content => {
     const page = content.closest<HTMLElement>('.page')!;
@@ -43,7 +47,7 @@ export function inspectOutput(root: HTMLElement, source: string): ExportIssue[] 
     for (const block of Array.from(content.children) as HTMLElement[]) {
       const blockRect = block.getBoundingClientRect();
       if (blockRect.bottom > rect.bottom - margin + 2) add(block, 'Content extends below the printable area. Split this block or reduce its size.', 'error');
-      if (block.scrollWidth > block.clientWidth + 2 || blockRect.right > rect.right - margin + 2) add(block, 'Content is wider than the printable area. Reduce its width or use landscape-sized paper.', 'error');
+      if (block.scrollWidth > block.clientWidth + 2 || blockRect.right > rect.right - margin + 2) add(block, 'Content is wider than the printable area. Reduce its width or choose larger paper such as A3.', 'error');
       block.querySelectorAll<HTMLElement>('table, pre, .rendered-equation, img').forEach(element => {
         const box = element.getBoundingClientRect();
         if (box.right > rect.right - margin + 2 || element.scrollWidth > element.clientWidth + 2) add(element, 'A table, equation, image, or code block is too wide for this page.', 'error');
@@ -52,7 +56,24 @@ export function inspectOutput(root: HTMLElement, source: string): ExportIssue[] 
     const last = content.lastElementChild;
     if (last && /^H[1-6]$/.test(last.tagName)) add(last, 'A heading is stranded at the bottom of a page. Add a page break before it.');
   });
-  const withoutCode = source.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g, match => ' '.repeat(match.length));
+  // Use Markdown tokens so long fences, indented blocks, unterminated fences
+  // and multi-backtick spans are not mistaken for unmatched math delimiters.
+  let withoutCode = '';
+  for (const token of marked.lexer(source)) {
+    let text = token.raw;
+    if (token.type === 'code') text = ' '.repeat(text.length);
+    else {
+      let cursor = 0;
+      marked.walkTokens([token], child => {
+        if (child.type !== 'codespan') return;
+        const start = token.raw.indexOf(child.raw, cursor);
+        if (start < 0) return;
+        text = text.slice(0, start) + ' '.repeat(child.raw.length) + text.slice(start + child.raw.length);
+        cursor = start + child.raw.length;
+      });
+    }
+    withoutCode += text;
+  }
   const dollars = Array.from(withoutCode.matchAll(/(?<!\\)\$\$/g));
   if (dollars.length % 2) issues.push({ message: 'A display equation has an unmatched $$ delimiter.', source: dollars[dollars.length - 1].index!, severity: 'error' });
   return issues;

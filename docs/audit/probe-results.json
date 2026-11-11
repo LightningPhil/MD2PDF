@@ -1,0 +1,51 @@
+{
+  "codeMath": {
+    "renderedMathInCode": 1,
+    "text": "Example x must remain literal"
+  },
+  "escapedDollars": {
+    "mathCount": 1,
+    "text": "Prices are 5and10."
+  },
+  "sanitization": {
+    "harmlessMarker": "1",
+    "executableAttributes": 1
+  },
+  "tableCaption": "| Reading |\n| :--- |\n| 10 |\n\n",
+  "undoAcrossSwitch": {
+    "before": "# Original\n\nKeep this text. Edited",
+    "after": "# Original\n\nKeep this text. Edited"
+  },
+  "closeRecovery": {
+    "documentsAfterReload": 1,
+    "remainingText": ""
+  },
+  "svgMode": {
+    "hasSvg": false,
+    "hasHtml": true,
+    "hasMathml": true
+  },
+  "printStyles": {
+    "backgrounds": [
+      "rgb(242, 244, 247)",
+      "rgb(242, 244, 247)"
+    ],
+    "rootPreset": "simple"
+  },
+  "coverOnlyCount": {
+    "activeCount": 1,
+    "inactiveBadge": "1"
+  },
+  "editorKeyboard": {
+    "label": null,
+    "labelledby": null,
+    "associatedLabels": 0,
+    "tabFocus": "markdownEditor",
+    "shiftTabFocus": "markdownEditor"
+  },
+  "narrowWorkspace": {
+    "sidebarVisible": false,
+    "openDocuments": 2,
+    "visibleDocumentSelectors": 0
+  }
+}

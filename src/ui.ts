@@ -1,5 +1,4 @@
-import { MathRenderMode } from './katex.js';
-
+import { requestFilename } from './dialog.js';
 export type ZoomMode = 'fit-width' | 'fit-page' | 'manual';
 export type ThemeMode = 'dark' | 'light';
 export type PageSizeKey = 'a4' | 'letter' | 'legal' | 'tabloid' | 'a3';
@@ -27,14 +26,6 @@ export interface ExportModalContext {
   totalFiles: number;
 }
 
-export interface ExportProgressUpdate {
-  processed: number;
-  total: number;
-  message: string;
-  totalElapsedMs?: number;
-  currentFileElapsedMs?: number;
-}
-
 interface SavePayload {
   content: string;
   filename: string;
@@ -54,7 +45,6 @@ export class UIController {
   private uploadBtn: HTMLButtonElement;
   private saveBtn: HTMLButtonElement;
   private exportPdfBtn: HTMLButtonElement;
-  private mathToggleBtn: HTMLButtonElement;
   private uploadInput: HTMLInputElement;
   private fontSizeSelect: HTMLSelectElement;
   private marginSelect: HTMLSelectElement;
@@ -77,22 +67,15 @@ export class UIController {
   private zoomOutBtn: HTMLButtonElement;
   private zoomReadout: HTMLElement;
 
-  private exportModalBackdrop: HTMLElement;
+  private exportModalBackdrop: HTMLDialogElement;
   private exportModalCloseBtn: HTMLButtonElement;
   private exportModalSummary: HTMLElement;
   private exportScopeCurrent: HTMLInputElement;
   private exportScopeAll: HTMLInputElement;
   private exportScopeCurrentLabel: HTMLElement;
   private exportScopeAllLabel: HTMLElement;
-  private exportProgressText: HTMLElement;
-  private exportProgressCount: HTMLElement;
-  private exportProgressBar: HTMLElement;
-  private exportLog: HTMLElement;
   private exportStartBtn: HTMLButtonElement;
-  private exportCancelBtn: HTMLButtonElement;
   private exportDismissBtn: HTMLButtonElement;
-
-  private currentMathMode: MathRenderMode = 'html';
   private currentTheme: ThemeMode = 'dark';
   private isSidebarCollapsed = false;
 
@@ -121,11 +104,9 @@ export class UIController {
   private fileSaveCallback?: () => SavePayload;
   private exportContextRequestCallback?: () => ExportModalContext;
   private exportStartCallback?: (scope: ExportScope) => void;
-  private exportCancelCallback?: () => void;
   private documentSelectCallback?: (documentId: string) => void;
   private documentRenameCallback?: (documentId: string, nextFilename: string) => void;
   private documentCloseCallback?: (documentId: string) => void;
-  private mathModeChangeCallback?: (mode: MathRenderMode) => void;
   private settingsChangeCallback?: () => void;
 
   private readonly onDividerPointerMove = (event: PointerEvent): void => {
@@ -151,7 +132,6 @@ export class UIController {
     this.uploadBtn = this.requireElement<HTMLButtonElement>('uploadBtn');
     this.saveBtn = this.requireElement<HTMLButtonElement>('saveBtn');
     this.exportPdfBtn = this.requireElement<HTMLButtonElement>('exportPdfBtn');
-    this.mathToggleBtn = this.requireElement<HTMLButtonElement>('mathToggle');
     this.uploadInput = this.requireElement<HTMLInputElement>('uploadFile');
     this.fontSizeSelect = this.requireElement<HTMLSelectElement>('fontSizeSelect');
     this.marginSelect = this.requireElement<HTMLSelectElement>('marginSelect');
@@ -174,26 +154,20 @@ export class UIController {
     this.zoomOutBtn = this.requireElement<HTMLButtonElement>('zoomOutBtn');
     this.zoomReadout = this.requireElement<HTMLElement>('zoomReadout');
 
-    this.exportModalBackdrop = this.requireElement<HTMLElement>('exportModalBackdrop');
+    this.exportModalBackdrop = this.requireElement<HTMLDialogElement>('exportModalBackdrop');
     this.exportModalCloseBtn = this.requireElement<HTMLButtonElement>('exportModalCloseBtn');
     this.exportModalSummary = this.requireElement<HTMLElement>('exportModalSummary');
     this.exportScopeCurrent = this.requireElement<HTMLInputElement>('exportScopeCurrent');
     this.exportScopeAll = this.requireElement<HTMLInputElement>('exportScopeAll');
     this.exportScopeCurrentLabel = this.requireElement<HTMLElement>('exportScopeCurrentLabel');
     this.exportScopeAllLabel = this.requireElement<HTMLElement>('exportScopeAllLabel');
-    this.exportProgressText = this.requireElement<HTMLElement>('exportProgressText');
-    this.exportProgressCount = this.requireElement<HTMLElement>('exportProgressCount');
-    this.exportProgressBar = this.requireElement<HTMLElement>('exportProgressBar');
-    this.exportLog = this.requireElement<HTMLElement>('exportLog');
     this.exportStartBtn = this.requireElement<HTMLButtonElement>('exportStartBtn');
-    this.exportCancelBtn = this.requireElement<HTMLButtonElement>('exportCancelBtn');
     this.exportDismissBtn = this.requireElement<HTMLButtonElement>('exportDismissBtn');
 
     this.setupEventListeners();
     this.applySettings();
     this.initializeTheme();
     this.setSplitPercent(this.splitPercent);
-    this.updateMathToggleButton();
     this.updateSidebarToggleButton();
     this.refreshPreviewViewport();
     this.resetExportPanel();
@@ -222,10 +196,6 @@ export class UIController {
     this.exportStartCallback = callback;
   }
 
-  onExportCancel(callback: () => void): void {
-    this.exportCancelCallback = callback;
-  }
-
   onDocumentSelect(callback: (documentId: string) => void): void {
     this.documentSelectCallback = callback;
   }
@@ -239,32 +209,10 @@ export class UIController {
   }
 
   /**
-   * Sets the callback for math mode changes.
-   */
-  onMathModeChange(callback: (mode: MathRenderMode) => void): void {
-    this.mathModeChangeCallback = callback;
-  }
-
-  /**
    * Sets the callback for settings changes.
    */
   onSettingsChange(callback: () => void): void {
     this.settingsChangeCallback = callback;
-  }
-
-  /**
-   * Updates math mode and button label.
-   */
-  setMathMode(mode: MathRenderMode): void {
-    this.currentMathMode = mode;
-    this.updateMathToggleButton();
-  }
-
-  /**
-   * Gets the current math mode.
-   */
-  getMathMode(): MathRenderMode {
-    return this.currentMathMode;
   }
 
   /**
@@ -327,6 +275,11 @@ export class UIController {
   }
 
   renderDocumentList(items: DocumentListItem[]): void {
+    const focused = document.activeElement as HTMLElement | null;
+    const focusedRow = focused?.closest('.document-item-row');
+    const focusedId = focusedRow?.querySelector<HTMLButtonElement>('.document-item')?.dataset.documentId;
+    const focusAction = focused?.classList.contains('document-item-action-close') ? 'close'
+      : focused?.classList.contains('document-item-action') ? 'rename' : 'select';
     this.documentList.innerHTML = '';
 
     if (items.length === 0) {
@@ -334,6 +287,7 @@ export class UIController {
       empty.className = 'document-list-empty';
       empty.textContent = 'No documents loaded.';
       this.documentList.appendChild(empty);
+      if (focusedId) document.getElementById('markdownEditor')?.focus();
       return;
     }
 
@@ -374,8 +328,8 @@ export class UIController {
       renameBtn.textContent = 'R';
       renameBtn.setAttribute('aria-label', `Rename ${item.filename}`);
       renameBtn.setAttribute('title', `Rename ${item.filename}`);
-      renameBtn.addEventListener('click', () => {
-        const nextFilename = window.prompt('Rename file for future downloads:', item.filename);
+      renameBtn.addEventListener('click', async () => {
+        const nextFilename = await requestFilename(item.filename);
         if (nextFilename === null) {
           return;
         }
@@ -399,6 +353,13 @@ export class UIController {
 
       this.documentList.appendChild(row);
     });
+    if (focusedId) {
+      const selected = Array.from(this.documentList.querySelectorAll<HTMLButtonElement>('.document-item'))
+        .find(button => button.dataset.documentId === focusedId);
+      const replacement = focusAction === 'select' ? selected : selected?.closest('.document-item-row')?.querySelector<HTMLButtonElement>(
+        focusAction === 'close' ? '.document-item-action-close' : '.document-item-action:not(.document-item-action-close)');
+      (replacement ?? this.documentList.querySelector<HTMLButtonElement>('.document-item.is-active') ?? document.getElementById('markdownEditor'))?.focus();
+    }
   }
 
   openExportModal(context?: ExportModalContext): void {
@@ -413,14 +374,15 @@ export class UIController {
       this.resetExportPanel();
     }
 
+    this.exportModalBackdrop.dispatchEvent(new Event('export-opening'));
+
     this.exportModalBackdrop.hidden = false;
+    if (!this.exportModalBackdrop.open) this.exportModalBackdrop.showModal();
     document.body.classList.add('export-modal-open');
     this.isExportModalOpen = true;
 
     requestAnimationFrame(() => {
-      if (this.isExporting) {
-        this.exportCancelBtn.focus();
-      } else if (!this.exportStartBtn.disabled) {
+      if (!this.exportStartBtn.disabled) {
         this.exportStartBtn.focus();
       } else {
         this.exportDismissBtn.focus();
@@ -433,9 +395,11 @@ export class UIController {
       return;
     }
 
+    this.exportModalBackdrop.close();
     this.exportModalBackdrop.hidden = true;
     document.body.classList.remove('export-modal-open');
     this.isExportModalOpen = false;
+    this.exportPdfBtn.focus();
   }
 
   setExportBusy(isBusy: boolean): void {
@@ -443,13 +407,11 @@ export class UIController {
 
     this.exportPdfBtn.disabled = isBusy;
     this.exportStartBtn.disabled = isBusy || this.exportContext.totalFiles === 0;
-    this.exportCancelBtn.disabled = !isBusy;
     this.exportDismissBtn.disabled = isBusy;
     this.exportModalCloseBtn.disabled = isBusy;
     this.exportScopeCurrent.disabled = isBusy || this.exportContext.totalFiles === 0;
     this.exportScopeAll.disabled = isBusy || this.exportContext.totalFiles <= 1;
 
-    this.exportLog.setAttribute('aria-busy', isBusy ? 'true' : 'false');
     this.exportModalBackdrop.classList.toggle('is-exporting', isBusy);
 
     if (isBusy && !this.isExportModalOpen) {
@@ -457,51 +419,8 @@ export class UIController {
     }
   }
 
-  setExportProgress(update: ExportProgressUpdate): void {
-    const total = Math.max(0, Math.floor(update.total));
-    const processed = this.clamp(Math.floor(update.processed), 0, Math.max(0, total));
-    const percent = total === 0 ? 0 : Math.round((processed / total) * 100);
-
-    this.exportProgressText.textContent = update.message;
-    const timeParts: string[] = [];
-    if (typeof update.currentFileElapsedMs === 'number' && Number.isFinite(update.currentFileElapsedMs)) {
-      timeParts.push(`file ${this.formatDuration(update.currentFileElapsedMs)}`);
-    }
-    if (typeof update.totalElapsedMs === 'number' && Number.isFinite(update.totalElapsedMs)) {
-      timeParts.push(`total ${this.formatDuration(update.totalElapsedMs)}`);
-    }
-
-    this.exportProgressCount.textContent = timeParts.length > 0
-      ? `${processed} / ${total} | ${timeParts.join(' | ')}`
-      : `${processed} / ${total}`;
-    this.exportProgressBar.style.width = `${percent}%`;
-    this.exportProgressBar.setAttribute('aria-valuetext', `${processed} of ${total}`);
-  }
-
   setExportSummary(summary: string): void {
     this.exportModalSummary.textContent = summary;
-  }
-
-  clearExportLog(): void {
-    this.exportLog.innerHTML = '';
-  }
-
-  appendExportLog(message: string): void {
-    const nearBottom = this.exportLog.scrollHeight - this.exportLog.scrollTop - this.exportLog.clientHeight < 32;
-
-    const line = document.createElement('div');
-    line.className = 'export-log-line';
-
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    const ss = String(now.getSeconds()).padStart(2, '0');
-    line.textContent = `[${hh}:${mm}:${ss}] ${message}`;
-    this.exportLog.appendChild(line);
-
-    if (nearBottom) {
-      this.exportLog.scrollTop = this.exportLog.scrollHeight;
-    }
   }
 
   /**
@@ -510,6 +429,7 @@ export class UIController {
   showNotification(message: string, type: 'success' | 'error' | 'info' = 'info'): void {
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
     toast.textContent = message;
     toast.style.cssText = `
       position: fixed;
@@ -537,7 +457,7 @@ export class UIController {
       toast.style.opacity = '0';
       toast.style.transform = 'translateY(-20px)';
       setTimeout(() => {
-        document.body.removeChild(toast);
+        toast.remove();
       }, 300);
     }, 3000);
   }
@@ -580,8 +500,11 @@ export class UIController {
       this.exportStartCallback?.(this.getSelectedExportScope());
     });
 
-    this.exportCancelBtn.addEventListener('click', () => {
-      this.exportCancelCallback?.();
+    this.exportModalBackdrop.addEventListener('close', () => {
+      this.exportModalBackdrop.hidden = true;
+      document.body.classList.remove('export-modal-open');
+      this.isExportModalOpen = false;
+      this.exportPdfBtn.focus();
     });
 
     this.exportScopeCurrent.addEventListener('change', () => {
@@ -610,19 +533,13 @@ export class UIController {
       }
     });
 
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && this.isExportModalOpen && !this.isExporting) {
-        event.preventDefault();
-        this.closeExportModal();
-      }
+    this.exportModalBackdrop.addEventListener('cancel', event => {
+      event.preventDefault();
+      if (!this.isExporting) this.closeExportModal();
     });
 
     this.sidebarToggleBtn.addEventListener('click', () => {
       this.toggleSidebar();
-    });
-
-    this.mathToggleBtn.addEventListener('click', () => {
-      this.toggleMathMode();
     });
 
     this.fontSizeSelect.addEventListener('change', () => {
@@ -769,6 +686,8 @@ export class UIController {
     const label = this.isSidebarCollapsed ? 'Expand document list' : 'Collapse document list';
     this.sidebarToggleBtn.setAttribute('aria-label', label);
     this.sidebarToggleBtn.setAttribute('title', label);
+    this.sidebarToggleBtn.setAttribute('aria-expanded', String(!this.isSidebarCollapsed));
+    this.sidebarToggleBtn.setAttribute('aria-controls', 'documentList documentOutline');
   }
 
   private normalizeExportContext(context: ExportModalContext): ExportModalContext {
@@ -802,12 +721,7 @@ export class UIController {
       : this.getSelectedExportScope() === 'all'
         ? this.exportContext.totalFiles
         : 1;
-    this.setExportProgress({
-      processed: 0,
-      total,
-      message: total === 0 ? 'No documents loaded' : 'Ready to export',
-    });
-    this.clearExportLog();
+
     this.setExportSummary(total === 0
       ? 'Load or create at least one document before exporting.'
       : 'Uses your browser print dialog. Choose Save as PDF, disable browser headers/footers, and keep scaling at 100%. All files produces one combined PDF.');
@@ -1008,11 +922,13 @@ export class UIController {
     return file.type === 'text/markdown'
       || file.type === 'text/plain'
       || file.name.toLowerCase().endsWith('.md')
-      || file.name.toLowerCase().endsWith('.markdown');
+      || file.name.toLowerCase().endsWith('.markdown')
+      || file.name.toLowerCase().endsWith('.txt');
   }
 
   private async readFiles(files: File[]): Promise<void> {
     const markdownFiles = files.filter((file) => this.isMarkdownFile(file));
+    const rejected = files.length - markdownFiles.length;
 
     if (markdownFiles.length === 0) {
       this.showNotification('Please select Markdown (.md) or text (.txt) files', 'error');
@@ -1029,6 +945,7 @@ export class UIController {
         ? `Loaded ${loadedFiles[0].filename}`
         : `Loaded ${loadedFiles.length} documents`;
       this.showNotification(message, 'success');
+      if (rejected) this.showNotification(`Skipped ${rejected} unsupported file${rejected === 1 ? '' : 's'}. Upload Markdown or plain text.`, 'info');
     } catch (error) {
       console.error('File read error:', error);
       this.showNotification('Failed to read one or more files', 'error');
@@ -1069,23 +986,12 @@ export class UIController {
       link.click();
       document.body.removeChild(link);
 
-      URL.revokeObjectURL(url);
-      this.showNotification(`Saved ${filename}`, 'success');
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.showNotification(`Download requested: ${filename}`, 'success');
     } catch (error) {
       this.showNotification('Failed to save file', 'error');
       console.error('Save error:', error);
     }
-  }
-
-  private toggleMathMode(): void {
-    const newMode: MathRenderMode = this.currentMathMode === 'html' ? 'svg' : 'html';
-    this.setMathMode(newMode);
-
-    this.mathModeChangeCallback?.(newMode);
-  }
-
-  private updateMathToggleButton(): void {
-    this.mathToggleBtn.textContent = `Math: ${this.currentMathMode.toUpperCase()}`;
   }
 
   private setupDragAndDrop(): void {
@@ -1108,19 +1014,6 @@ export class UIController {
 
       void this.readFiles(files);
     });
-  }
-
-  private formatDuration(milliseconds: number): string {
-    const safeMs = Math.max(0, milliseconds);
-    const totalSeconds = safeMs / 1000;
-
-    if (totalSeconds < 60) {
-      return `${totalSeconds.toFixed(1)}s`;
-    }
-
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds - (minutes * 60);
-    return `${minutes}m ${seconds.toFixed(1)}s`;
   }
 
   private clamp(value: number, min: number, max: number): number {

@@ -1,10 +1,12 @@
 MD2PDF third-party notices
 
 The application is MIT-licensed. Bundled libraries and fonts retain the licenses reproduced below.
+For dual-licensed packages we use the permissive option stated in each heading; upstream license files are reproduced intact.
+Development-only tools are not distributed in the website.
 
 
 ========================================================================
-dompurify 3.4.17 — (MPL-2.0 OR Apache-2.0)
+dompurify 3.4.17 — Apache-2.0 (upstream: (MPL-2.0 OR Apache-2.0))
 ========================================================================
 
 LICENSE
@@ -590,7 +592,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 
 ========================================================================
-jszip 3.10.2 — (MIT OR GPL-3.0-or-later)
+jszip 3.10.2 — MIT (upstream: (MIT OR GPL-3.0-or-later))
 ========================================================================
 
 LICENSE.markdown
@@ -1249,7 +1251,7 @@ copy of the Program in return for a fee.
 
 
 ========================================================================
-lie 3.3.0 — MIT
+lie 3.3.0 — MIT (upstream: MIT)
 ========================================================================
 
 license.md
@@ -1264,7 +1266,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 
 ========================================================================
-immediate 3.0.6 — MIT
+immediate 3.0.6 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE.txt
@@ -1292,7 +1294,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ========================================================================
-pako 1.0.11 — (MIT AND Zlib)
+pako 1.0.11 — MIT AND Zlib (upstream: (MIT AND Zlib))
 ========================================================================
 
 LICENSE
@@ -1321,7 +1323,7 @@ THE SOFTWARE.
 
 
 ========================================================================
-readable-stream 2.3.8 — MIT
+readable-stream 2.3.8 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE
@@ -1376,7 +1378,7 @@ IN THE SOFTWARE.
 
 
 ========================================================================
-core-util-is 1.0.3 — MIT
+core-util-is 1.0.3 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE
@@ -1403,7 +1405,7 @@ IN THE SOFTWARE.
 
 
 ========================================================================
-inherits 2.0.4 — ISC
+inherits 2.0.4 — ISC (upstream: ISC)
 ========================================================================
 
 LICENSE
@@ -1427,13 +1429,35 @@ PERFORMANCE OF THIS SOFTWARE.
 
 
 ========================================================================
-isarray 1.0.0 — MIT
+isarray 1.0.0 — MIT (upstream: MIT)
 ========================================================================
-License information: https://github.com/juliangruber/isarray
+
+README.md — License
+(MIT)
+
+Copyright (c) 2013 Julian Gruber &lt;julian@juliangruber.com&gt;
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 
 ========================================================================
-process-nextick-args 2.0.1 — MIT
+process-nextick-args 2.0.1 — MIT (upstream: MIT)
 ========================================================================
 
 license.md
@@ -1460,7 +1484,7 @@ SOFTWARE.**
 
 
 ========================================================================
-safe-buffer 5.1.2 — MIT
+safe-buffer 5.1.2 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE
@@ -1489,7 +1513,7 @@ THE SOFTWARE.
 
 
 ========================================================================
-string_decoder 1.1.1 — MIT
+string_decoder 1.1.1 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE
@@ -1545,7 +1569,7 @@ IN THE SOFTWARE.
 
 
 ========================================================================
-util-deprecate 1.0.2 — MIT
+util-deprecate 1.0.2 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE
@@ -1577,7 +1601,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ========================================================================
-setimmediate 1.0.5 — MIT
+setimmediate 1.0.5 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE.txt
@@ -1605,7 +1629,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ========================================================================
-katex 0.16.28 — MIT
+katex 0.19.1 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE
@@ -1634,7 +1658,7 @@ SOFTWARE.
 
 
 ========================================================================
-commander 8.3.0 — MIT
+commander 15.0.0 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE
@@ -1664,7 +1688,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ========================================================================
-marked 12.0.2 — MIT
+marked 12.0.2 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE.md
@@ -1716,7 +1740,7 @@ This software is provided by the copyright holders and contributors “as is” 
 
 
 ========================================================================
-mathlive 0.111.1 — MIT
+mathlive 0.111.1 — MIT (upstream: MIT)
 ========================================================================
 
 LICENSE.txt
@@ -1739,4 +1763,64 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 DEALINGS IN THE SOFTWARE.
+
+
+
+========================================================================
+katex-fonts-LICENSE.txt
+========================================================================
+
+KaTeX fonts bundled with KaTeX and MathLive
+Source: https://github.com/KaTeX/katex-fonts/blob/master/LICENSE
+
+The MIT License (MIT)
+
+Copyright (c) 2018 Khan Academy
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+
+========================================================================
+pako-zlib-NOTICE.txt
+========================================================================
+
+Pako lib/zlib (Zlib license)
+Source: pako 1.0.11 lib/zlib/deflate.js
+https://github.com/nodeca/pako/tree/1.0.11/lib/zlib
+
+(C) 1995-2013 Jean-loup Gailly and Mark Adler
+(C) 2014-2017 Vitaly Puzrin and Andrey Tupitsin
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+  claim that you wrote the original software. If you use this software
+  in a product, an acknowledgment in the product documentation would be
+  appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+  misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
 

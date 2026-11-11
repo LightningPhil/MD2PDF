@@ -90,6 +90,38 @@ describe('MarkdownEditor', () => {
     expect(document.activeElement).toBe(textarea)
   })
 
+  it('keeps independent undo and redo histories across document switches', () => {
+    const editor = new MarkdownEditor('testEditor');
+    editor.setContent('First', 'a'); editor.setSelection(5); editor.insertText(' edit');
+    editor.setContent('Second', 'b'); editor.setSelection(6); editor.insertText(' change');
+    editor.setContent('First edit', 'a'); editor.undo();
+    expect(editor.getContent()).toBe('First');
+    editor.setContent('Second change', 'b'); editor.undo();
+    expect(editor.getContent()).toBe('Second');
+    editor.setContent('First', 'a'); editor.redo();
+    expect(editor.getContent()).toBe('First edit');
+  });
+
+  it('does not apply old history to replaced source or a closed document', () => {
+    const editor = new MarkdownEditor('testEditor');
+    editor.setContent('First', 'a'); editor.insertText('edit');
+    editor.setContent('External replacement', 'a'); editor.undo();
+    expect(editor.getContent()).toBe('External replacement');
+    editor.insertText('x'); const content=editor.getContent();
+    editor.forgetDocumentHistory('a'); editor.setContent(content, 'a'); editor.undo();
+    expect(editor.getContent()).toBe(content);
+  });
+
+  it('allows Tab navigation and provides an explicit indent shortcut', () => {
+    const editor = new MarkdownEditor('testEditor'); editor.setContent('');
+    for (const shiftKey of [false,true]) {
+      const event = new KeyboardEvent('keydown',{key:'Tab',shiftKey,cancelable:true});
+      textarea.dispatchEvent(event); expect(event.defaultPrevented).toBe(false);
+    }
+    textarea.dispatchEvent(new KeyboardEvent('keydown',{key:']',ctrlKey:true,cancelable:true}));
+    expect(editor.getContent()).toBe('  '); editor.undo(); expect(editor.getContent()).toBe('');
+  });
+
   it('removeChangeListener removes callback', () => {
     const editor = new MarkdownEditor('testEditor')
     let callCount = 0

@@ -1,0 +1,67 @@
+{
+  "tmp\\workspace-tests\\report.pdf": {
+    "pages": 3,
+    "sizes_mm": [
+      [
+        215.9,
+        279.4
+      ],
+      [
+        215.9,
+        279.4
+      ],
+      [
+        215.9,
+        279.4
+      ]
+    ],
+    "links": 4,
+    "characters": 408
+  },
+  "tmp\\workspace-tests\\all-documents.pdf": {
+    "pages": 7,
+    "sizes_mm": [
+      [
+        215.9,
+        279.4
+      ],
+      [
+        215.9,
+        279.4
+      ],
+      [
+        215.9,
+        279.4
+      ],
+      [
+        209.9,
+        297.0
+      ],
+      [
+        215.9,
+        279.4
+      ],
+      [
+        215.9,
+        279.4
+      ],
+      [
+        215.9,
+        279.4
+      ]
+    ],
+    "links": 8,
+    "characters": 939
+  },
+  "tmp\\pages-tests\\browser.pdf": {
+    "pages": 1,
+    "sizes_mm": [
+      [
+        215.9,
+        279.4
+      ]
+    ],
+    "links": 0,
+    "characters": 131
+  }
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "fixture": "engineering-note",
+    "sourceBytes": 13914,
+    "assets": 1,
+    "crcValid": true,
+    "packageMatchesDownloadedMarkdown": true
+  },
+  {
+    "fixture": "research-update",
+    "sourceBytes": 14255,
+    "assets": 1,
+    "crcValid": true,
+    "packageMatchesDownloadedMarkdown": true
+  },
+  {
+    "fixture": "method-handout",
+    "sourceBytes": 793,
+    "assets": 0,
+    "crcValid": true,
+    "packageMatchesDownloadedMarkdown": true
+  }
+]

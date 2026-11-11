@@ -34,6 +34,16 @@ await page.addInitScript(() => { window.print = () => { document.body.dataset.pr
 await mkdir('tmp/pages-tests', { recursive: true });
 try {
   await page.goto(base, { waitUntil: 'networkidle' });
+  const noticesLink = page.getByRole('link', { name: 'Licenses', exact: true });
+  const notices = await context.request.get(await noticesLink.evaluate(link => link.href));
+  assert.equal(notices.status(), 200);
+  const noticeText = await notices.text();
+  for (const attribution of ['dompurify', 'jszip', 'katex', 'marked', 'mathlive', 'Julian Gruber', 'KaTeX fonts', 'Jean-loup Gailly']) {
+    assert.ok(noticeText.includes(attribution), `Missing attribution: ${attribution}`);
+  }
+  const license = await context.request.get(new URL('LICENSE.txt', base).href);
+  assert.equal(license.status(), 200);
+  assert.match(await license.text(), /MIT License[\s\S]*Philip Leichauer/);
   await page.waitForFunction(() => !document.body.classList.contains('restoring-workspace'));
   const editor = page.locator('#markdownEditor');
   await editor.fill('# Portable equations\n\nA browser-only document with **bold text**.\n\n$$\n\\int_0^1 x^2\\,dx=\\frac{1}{3}\n$$\n\n| Result | Value |\n| --- | --- |\n| Integral | 1/3 |\n');

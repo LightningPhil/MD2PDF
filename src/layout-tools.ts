@@ -19,7 +19,7 @@ export class LayoutTools {
     this.dialog = dialog; this.form = form;
     try {
       const saved = JSON.parse(localStorage.getItem('md2pdf.style-presets') || '{}');
-      for (const [key, value] of Object.entries(saved)) if (key.length <= 80) this.presets[key] = normalizeSettings(value);
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) for (const [key, value] of Object.entries(saved)) if (key.length <= 80) this.presets[key] = normalizeSettings(value);
     } catch { /* Start with built-in presets. */ }
     this.refreshPresetOptions();
     this.input<HTMLSelectElement>('preset').addEventListener('change', () => {
@@ -64,7 +64,9 @@ export class LayoutTools {
       const element = this.input<HTMLInputElement | HTMLSelectElement>(key);
       raw[key] = typeof defaultValue === 'boolean' ? (element as HTMLInputElement).checked : typeof defaultValue === 'number' ? Number(element.value) : element.value;
     }
-    if (!(String(raw.preset) in PRESETS)) raw.preset = 'custom';
+    const selectedPreset = String(raw.preset);
+    if (selectedPreset.startsWith('saved:')) raw.preset = this.presets[selectedPreset.slice(6)]?.preset ?? 'custom';
+    else if (!(selectedPreset in PRESETS)) raw.preset = 'custom';
     return normalizeSettings(raw);
   }
   private refreshPresetOptions(): void {

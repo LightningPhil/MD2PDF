@@ -43,8 +43,9 @@ export class WorkspaceTools {
     }, 'insertPageBreak');
     add('Check output', () => { void this.showChecks(); }, 'checkOutput');
     const packageButton = add('Save package', () => {
+      const filename = hooks.getFilename();
       packageButton.disabled = true;
-      void createPackage(editor.getContent(), hooks.getFilename(), hooks.getSettings()).then(blob => downloadBlob(blob, hooks.getFilename().replace(/\.(md|markdown)$/i, '') + '.md2pdf.zip')).catch(error => this.setStatus(`Package could not save: ${error.message}`, true)).finally(() => { packageButton.disabled = false; });
+      void createPackage(editor.getContent(), filename, hooks.getSettings()).then(blob => downloadBlob(blob, filename.replace(/\.(md|markdown)$/i, '') + '.md2pdf.zip')).catch(error => this.setStatus(`Package could not save: ${error.message}`, true)).finally(() => { packageButton.disabled = false; });
     }, 'savePackage');
     const input = document.createElement('input'); input.type = 'file'; input.accept = '.zip'; input.hidden = true; actions.append(input);
     add('Open package', () => input.click(), 'openPackage');
@@ -67,6 +68,7 @@ export class WorkspaceTools {
     checks.innerHTML = '<summary>Output checks</summary><div id="exportCheckResults" role="status"></div>';
     document.querySelector('.export-scope-group')!.after(checks);
     for (const id of ['exportScopeCurrent', 'exportScopeAll']) document.getElementById(id)!.addEventListener('change', () => { void this.refreshExportChecks(); });
+    document.getElementById('exportModalBackdrop')!.addEventListener('export-opening', () => { void this.refreshExportChecks(); });
   }
   refresh(): void { this.navigation.refresh(); }
   setStatus(message: string, error = false): void {
@@ -95,8 +97,11 @@ export class WorkspaceTools {
       button.addEventListener('click', () => {
         const dialog = target.closest('dialog');
         if (dialog) {
+          const dismiss = document.getElementById('exportDismissBtn') as HTMLButtonElement;
+          if (dialog.id === 'exportModalBackdrop' && dismiss.disabled) return;
           dialog.addEventListener('close', () => { this.hooks.goToIssue(issue); }, { once: true });
-          dialog.close();
+          if (dialog.id === 'exportModalBackdrop') dismiss.click();
+          else dialog.close();
         } else {
           document.getElementById('exportDismissBtn')!.click();
           this.hooks.goToIssue(issue);
@@ -128,7 +133,7 @@ export class WorkspaceTools {
     form.addEventListener('submit', event => {
       event.preventDefault();
       if (!select.value) { dialogError(dialog, 'Add a reference label to an equation, figure, or table first.'); return; }
-      this.editor.replaceRange(range.start, range.end, `[@${select.value}]`); dialog.close(); this.editor.focus();
+      dialog.close(); this.editor.replaceRange(range.start, range.end, `[@${select.value}]`); this.editor.focus();
     });
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
     showDialog(dialog);

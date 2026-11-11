@@ -48,8 +48,8 @@ describe('PageManager', () => {
 
   it('setMathMode updates the math mode', () => {
     const manager = new PageManager('previewContainer')
-    manager.setMathMode('svg')
-    expect(manager.getMathMode()).toBe('svg')
+    manager.setMathMode('html')
+    expect(manager.getMathMode()).toBe('html')
   })
 
   it('getPageCount returns 0 initially', () => {

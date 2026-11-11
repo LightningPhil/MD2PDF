@@ -1,5 +1,7 @@
 # ProjectPlan.md - Markdown to Paginated A4 Preview and PDF Export
 
+> **Historical plan, retained for context.** Phase claims, SVG mode, server/CLI export and previous acceptance statements below are not current guarantees. The supported scope is small Markdown documents with HTML KaTeX and browser PDF printing. Use [README.md](README.md), [current use cases](docs/USE_CASES.md), and the [code review](docs/CODE_REVIEW.md) for current behaviour and verification.
+
 ## 1. Product Purpose
 
 Build a web app that:

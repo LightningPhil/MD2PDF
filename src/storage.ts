@@ -12,16 +12,17 @@ export function validateWorkspace(value: unknown): WorkspaceState | null {
   const raw = value as WorkspaceState;
   if (raw.version !== 1 || !Array.isArray(raw.documents)) return null;
   const ids = new Set<string>();
+  const finite = (value: unknown, fallback = 0): number => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : fallback;
   const documents = raw.documents.filter(doc => {
     if (!doc || typeof doc.id !== 'string' || typeof doc.filename !== 'string' || typeof doc.content !== 'string' || ids.has(doc.id)) return false;
     ids.add(doc.id); return true;
   }).map(doc => ({ ...doc, pageCount: 1, settings: normalizeSettings(doc.settings), cursor: {
-    start: Math.min(doc.content.length, Math.max(0, Number(doc.cursor?.start) || 0)),
-    end: Math.min(doc.content.length, Math.max(0, Number(doc.cursor?.end) || 0)),
-    scrollTop: Math.max(0, Number(doc.cursor?.scrollTop) || 0),
+    start: Math.min(doc.content.length, Math.floor(finite(doc.cursor?.start))),
+    end: Math.min(doc.content.length, Math.floor(finite(doc.cursor?.end))),
+    scrollTop: finite(doc.cursor?.scrollTop),
   } }));
   return { version: 1, documents, activeDocumentId: documents.some(d => d.id === raw.activeDocumentId) ? raw.activeDocumentId : documents[0]?.id ?? null,
-    untitledCounter: Math.max(1, Number(raw.untitledCounter) || 1), split: /^\d+(\.\d+)?%$/.test(raw.split) ? raw.split : '50%', sidebarCollapsed: !!raw.sidebarCollapsed, syncScroll: raw.syncScroll !== false };
+    untitledCounter: Math.max(1, Math.floor(finite(raw.untitledCounter, 1))), split: /^\d+(\.\d+)?%$/.test(raw.split) ? `${Math.min(80, Math.max(20, parseFloat(raw.split)))}%` : '50%', sidebarCollapsed: !!raw.sidebarCollapsed, syncScroll: raw.syncScroll !== false };
 }
 export class WorkspaceStore {
   private db: Promise<IDBDatabase>;

@@ -1,0 +1,580 @@
+[
+  {
+    "ids": [
+      "UC-34"
+    ],
+    "name": "Empty workspace disables export",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-01",
+      "UC-03",
+      "UC-04",
+      "UC-11",
+      "UC-18",
+      "UC-36"
+    ],
+    "name": "Brief renders literal code, math and references",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-08"
+    ],
+    "name": "Reloaded tab restores saved draft",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-19",
+      "UC-20",
+      "UC-21",
+      "UC-22",
+      "UC-23"
+    ],
+    "name": "Technical style, cover, contents and running text applied",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-31"
+    ],
+    "name": "Clean report passes output checks",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-15"
+    ],
+    "name": "Unlabelled table caption and literal pipe survive",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-19"
+    ],
+    "name": "Saved Technical preset retains table shading",
+    "ok": false,
+    "detail": "Saving then applying a personal preset changes the effective preset to custom, so technical table shading becomes the default gray."
+  },
+  {
+    "ids": [
+      "UC-06"
+    ],
+    "name": "Blank rename remains open with helpful error",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-06"
+    ],
+    "name": "Rename supplies Markdown extension",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-16",
+      "UC-17"
+    ],
+    "name": "Pasted PNG embeds with alt, width and numbered caption",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-19"
+    ],
+    "name": "Saved Technical preset keeps table shading after repair",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-32",
+      "UC-34"
+    ],
+    "name": "Native Save as PDF / cancel",
+    "ok": false,
+    "status": "blocked",
+    "detail": "Start Export reached browser printing (tab title changed to document filename), but Chrome native print preview is not exposed by this automation surface; click times out and the tab stops responding. No native PDF or cancellation pass is claimed."
+  },
+  {
+    "ids": [
+      "UC-18",
+      "UC-30"
+    ],
+    "name": "Reference insert retains cursor after modal close",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-10"
+    ],
+    "name": "All ten text formatting buttons insert correct Markdown",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-10"
+    ],
+    "name": "Heading level 1",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-10"
+    ],
+    "name": "Heading level 2",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-10"
+    ],
+    "name": "Heading level 3",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-10"
+    ],
+    "name": "Bold keyboard shortcut",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-05",
+      "UC-28"
+    ],
+    "name": "Undo survives document switch without mixing sources",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-28"
+    ],
+    "name": "Redo after switching",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-27",
+      "UC-36"
+    ],
+    "name": "Unicode offsets, Previous wrap, case mode and literal dollar replacement",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-30"
+    ],
+    "name": "Tab exits source editor",
+    "ok": true,
+    "detail": "Observed focus on paneDivider."
+  },
+  {
+    "ids": [
+      "UC-12"
+    ],
+    "name": "All twelve equation templates render and validate",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-12"
+    ],
+    "name": "All ten symbol buttons insert valid source",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-12"
+    ],
+    "name": "All four source structure buttons produce valid expressions",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-13",
+      "UC-14"
+    ],
+    "name": "All visual structures reject unfilled boxes",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-13"
+    ],
+    "name": "Typing and Tab complete a visual fraction",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-14"
+    ],
+    "name": "Invalid LaTeX disables insertion",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-14",
+      "UC-18"
+    ],
+    "name": "Invalid equation label disables insertion",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-12",
+      "UC-13"
+    ],
+    "name": "Display equation commits to the intended source position",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-14"
+    ],
+    "name": "Preview click edits an existing equation without duplicating it",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-03",
+      "UC-24",
+      "UC-36"
+    ],
+    "name": "Research fixture: four pages, two equations, figure, table and reading links pass preflight",
+    "ok": true,
+    "detail": "Observed before controller reset; native PDF remains blocked."
+  },
+  {
+    "ids": [
+      "UC-04",
+      "UC-19",
+      "UC-20",
+      "UC-24"
+    ],
+    "name": "Handout, page break, all presets and paper dimensions checked",
+    "ok": true,
+    "detail": "A4 794×1123; Letter816×1056; Legal816×1344; Tabloid1056×1632; A3 1123×1587 CSS pixels."
+  },
+  {
+    "ids": [
+      "UC-08",
+      "UC-19"
+    ],
+    "name": "Reload retains three sources/settings; personal preset reload/delete works",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-29",
+      "UC-30"
+    ],
+    "name": "Responsive widths 1500/1200/650/375 keep sidebar/tools reachable",
+    "ok": true,
+    "detail": "No body horizontal overflow; 375px layout dialog fits. Focus/Escape works."
+  },
+  {
+    "ids": [
+      "UC-26"
+    ],
+    "name": "Outline reaches matching source",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-26"
+    ],
+    "name": "Scroll sync toggle changes state",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-16",
+      "UC-26"
+    ],
+    "name": "Editing second identical inline image leaves first intact",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-02",
+      "UC-05",
+      "UC-37"
+    ],
+    "name": "Mixed TXT/Markdown import preserves existing drafts",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-09",
+      "UC-35",
+      "UC-37"
+    ],
+    "name": "Downloaded package reopens embedded image and Letter report settings",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-09",
+      "UC-35"
+    ],
+    "name": "Malformed and bounded package inputs fail clearly",
+    "ok": true,
+    "detail": "[{\"file\":\"malformed\",\"error\":\"Package could not open: Can't find end of central directory : is this a zip file ? If it is, see https://stuk.github.io/jszip/documentation/howto/read_zip.html\"},{\"file\":\"no-manifest\",\"error\":\"Package could not open: This ZIP is missing its MD2PDF project manifest.\"},{\"file\":\"missing-document\",\"error\":\"Package could not open: The Markdown file in this package is missing.\"},{\"file\":\"bad-version\",\"error\":\"Package could not open: Unrecognized MD2PDF package format.\"},{\"file\":\"too-many-entries\",\"error\":\"Package could not open: This package contains too many entries (maximum 1000).\"},{\"file\":\"expanded-source\",\"error\":\"Package could not open: Package entry report.md exceeds its expanded size limit.\"}]"
+  },
+  {
+    "ids": [
+      "UC-16"
+    ],
+    "name": "PNG, JPEG, WebP and GIF file choices produce embedded data",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-02",
+      "UC-06",
+      "UC-37"
+    ],
+    "name": "Saved Markdown reimports with image, settings and hidden metadata",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-14",
+      "UC-17",
+      "UC-18",
+      "UC-31"
+    ],
+    "name": "Broken math, labels and image are diagnosed",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-31",
+      "UC-34"
+    ],
+    "name": "Blocking output errors return usable export controls",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-11",
+      "UC-15",
+      "UC-24",
+      "UC-31"
+    ],
+    "name": "Wide code and tall table produce actionable clipping errors",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-22",
+      "UC-24"
+    ],
+    "name": "Seventy-entry contents splits without clipping and retains all destinations",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-23",
+      "UC-31"
+    ],
+    "name": "Long running header is diagnosed as clipped",
+    "ok": true,
+    "detail": "420-character header produced a blocking error; shortened afterward."
+  },
+  {
+    "ids": [
+      "UC-07"
+    ],
+    "name": "Close warning and Cancel preserve an inactive draft",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-07"
+    ],
+    "name": "Explicit close removes only the requested inactive draft",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-39"
+    ],
+    "name": "Legacy TeX remains editable and is rejected for PDF export",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-07"
+    ],
+    "name": "Closing active file selects an intact neighbouring source",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-09",
+      "UC-35",
+      "UC-38"
+    ],
+    "name": "Package transfers into a fresh production origin at /MD2PDF/",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-07"
+    ],
+    "name": "Closing last document clears source, outline and running text",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-11",
+      "UC-35"
+    ],
+    "name": "Production rendering preserves literal code and removes executable attributes",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-38"
+    ],
+    "name": "Production app and bundled equation fonts load under the deployment subpath",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-35"
+    ],
+    "name": "Already-loaded production app edits and renders with its server stopped",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-13",
+      "UC-35"
+    ],
+    "name": "Cold lazy editor failure explains and permits LaTeX fallback",
+    "ok": true,
+    "detail": "Visible in-dialog fallback message; inserted source equation while server remained stopped."
+  },
+  {
+    "ids": [
+      "UC-16"
+    ],
+    "name": "Oversized image rejected with a size limit",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-15"
+    ],
+    "name": "Table row/column limits produce useful feedback",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-33",
+      "UC-34"
+    ],
+    "name": "All-files scope checks the clean mixed-style workspace and Escape returns to editor",
+    "ok": true,
+    "detail": "Native combined PDF remains unverified; print preparation is covered by isolated tests."
+  },
+  {
+    "ids": [
+      "UC-25"
+    ],
+    "name": "Fit page/width and zoom upper clamp work",
+    "ok": true,
+    "detail": "60%"
+  },
+  {
+    "ids": [
+      "UC-06"
+    ],
+    "name": "Cancel rename leaves the original filename",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-06",
+      "UC-30"
+    ],
+    "name": "Rename retains keyboard focus after file-list refresh",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "ids": [
+      "UC-10",
+      "UC-11",
+      "UC-24"
+    ],
+    "name": "Long ordered procedure and mixed inline paragraph conserve all content",
+    "ok": true,
+    "detail": "{\"final\":true,\"lists\":[{\"items\":18,\"start\":\"1\"},{\"items\":19,\"start\":\"19\"},{\"items\":19,\"start\":\"38\"},{\"items\":4,\"start\":\"57\"}],\"outline\":[\"Pagination check\",\"Heading 1\",\"Heading 2\",\"Heading 3\",\"Heading 4\",\"Heading 5\",\"Heading 6\",\"Long procedure\",\"Mixed inline paragraph\"],\"pages\":7,\"steps\":60,\"tails\":350,\"words\":350}"
+  },
+  {
+    "ids": [
+      "UC-38"
+    ],
+    "name": "Browser test workspace left open; temporary file-URL permission restored",
+    "ok": true,
+    "detail": "User confirmed restoration; final tab kept at the isolated random-port URL."
+  }
+]

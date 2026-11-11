@@ -1,168 +1,35 @@
-// Import KaTeX at runtime to avoid bundling issues
-declare const katex: any;
+import katex from 'katex';
 
-export type MathRenderMode = 'html' | 'svg';
+export type MathRenderMode = 'html';
 
-/**
- * Decodes HTML entities back to their original characters
- */
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ');
-}
-
-/**
- * Decodes math payload stored in a data attribute.
- */
-function decodeMathPayload(payload: string | undefined): string {
-  if (!payload) {
-    return '';
-  }
-
-  try {
-    return decodeURIComponent(payload);
-  } catch {
-    return payload;
-  }
-}
-
-/**
- * Renders math expressions in the given HTML element using KaTeX
- * @param root - Root element to search for math expressions
- * @param mode - Rendering mode: 'html' (default) or 'svg'
- */
-export function renderMath(root: HTMLElement, mode: MathRenderMode = 'html'): void {
-  // Load KaTeX from CDN if not already loaded
-  if (typeof katex === 'undefined') {
-    console.warn('KaTeX library not loaded');
-    return;
-  }
-  
-  // Configure KaTeX options
-  const options = {
-    throwOnError: false,
-    displayMode: false,
-    output: mode,
-    strict: false,
-    trust: false,
-  };
-
-  // First pass: render markdown-stage math placeholders.
-  const placeholders = root.querySelectorAll<HTMLElement>('.math-display-placeholder, .math-inline-placeholder');
-  placeholders.forEach((placeholder) => {
-    const math = decodeMathPayload(placeholder.dataset.math).trim();
-    if (!math) {
-      return;
+/** Only parser-identified math tokens are rendered. Surrounding code and escaped
+ * text must never be reparsed as HTML after Markdown sanitisation. */
+export function renderMath(root: HTMLElement, _mode: MathRenderMode = 'html'): void {
+  root.querySelectorAll<HTMLElement>('.math-display-placeholder, .math-inline-placeholder').forEach(placeholder => {
+    if (placeholder.closest('code, pre, .katex, .rendered-equation')) return;
+    const payload = placeholder.dataset.math || '';
+    let math: string;
+    try { math = decodeURIComponent(payload).trim(); }
+    catch { math = payload; }
+    const display = placeholder.classList.contains('math-display-placeholder');
+    const wrapper = document.createElement(display ? 'div' : 'span');
+    for (const key of ['math', 'sourceStart', 'sourceEnd', 'label'] as const) {
+      if (placeholder.dataset[key] !== undefined) wrapper.dataset[key] = placeholder.dataset[key];
     }
-
-    const isDisplay = placeholder.classList.contains('math-display-placeholder');
-
+    wrapper.className = 'rendered-equation';
+    if (display) wrapper.classList.add('katex-display');
     try {
-      const rendered = katex.renderToString(math, {
-        ...options,
-        displayMode: isDisplay,
+      if (!math) throw new Error('Enter a mathematical expression.');
+      wrapper.innerHTML = katex.renderToString(math, {
+        displayMode: display, output: 'html', throwOnError: true, strict: false, trust: false,
       });
-
-      const wrapper = document.createElement(isDisplay ? 'div' : 'span');
-      for (const attribute of Array.from(placeholder.attributes)) {
-        if (attribute.name.startsWith('data-')) wrapper.setAttribute(attribute.name, attribute.value);
-      }
-      wrapper.classList.add('rendered-equation');
-      if (isDisplay) {
-        wrapper.classList.add('katex-display');
-      }
-      wrapper.innerHTML = rendered;
-      placeholder.replaceWith(wrapper);
     } catch (error) {
-      console.warn('Failed to render placeholder math:', math, error);
+      const fallback = document.createElement('span');
+      fallback.className = 'katex-error';
+      fallback.title = error instanceof Error ? error.message : 'Invalid equation';
+      fallback.textContent = math || 'Empty equation';
+      wrapper.append(fallback);
     }
+    placeholder.replaceWith(wrapper);
   });
-  
-  // Find and render display math expressions FIRST ($$...$$)
-  // This must happen before inline math to avoid $...$ matching inside $$...$$
-  const displayMathRegex = /\$\$([\s\S]+?)\$\$/g;
-  let allTextContent = root.innerHTML;
-  
-  if (displayMathRegex.test(allTextContent)) {
-    displayMathRegex.lastIndex = 0; // Reset regex
-    const replacementHTML = allTextContent.replace(displayMathRegex, (match, math) => {
-      try {
-        // Strip <br> tags and decode HTML entities
-        let cleanMath = math.replace(/<br\s*\/?>/gi, '\n');
-        cleanMath = decodeHtmlEntities(cleanMath).trim();
-        return `<div class="katex-display">${katex.renderToString(cleanMath, { ...options, displayMode: true })}</div>`;
-      } catch (error) {
-        console.warn('Failed to render display math:', math, error);
-        return match;
-      }
-    });
-    
-    if (replacementHTML !== allTextContent) {
-      root.innerHTML = replacementHTML;
-    }
-  }
-
-  // Find and render inline math expressions ($...$)
-  const inlineMathRegex = /\$([^$\n]+?)\$/g;
-  const textNodes = getTextNodes(root);
-  
-  textNodes.forEach(node => {
-    const text = node.textContent || '';
-    if (inlineMathRegex.test(text)) {
-      inlineMathRegex.lastIndex = 0; // Reset regex
-      const parent = node.parentNode;
-      if (!parent) return;
-      
-      const replacementHTML = text.replace(inlineMathRegex, (match, math) => {
-        try {
-          // Strip any HTML tags and decode entities
-          let cleanMath = math.replace(/<[^>]+>/g, '');
-          cleanMath = decodeHtmlEntities(cleanMath).trim();
-          return katex.renderToString(cleanMath, { ...options, displayMode: false });
-        } catch (error) {
-          console.warn('Failed to render inline math:', math, error);
-          return match;
-        }
-      });
-      
-      if (replacementHTML !== text) {
-        const wrapper = document.createElement('span');
-        wrapper.innerHTML = replacementHTML;
-        parent.replaceChild(wrapper, node);
-      }
-    }
-  });
-}
-
-/**
- * Gets all text nodes within an element
- */
-function getTextNodes(element: HTMLElement): Text[] {
-  const textNodes: Text[] = [];
-  const walker = document.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode: (node) => {
-        // Skip text nodes that are already inside katex elements
-        const parent = node.parentElement;
-        if (parent && (parent.classList.contains('katex') || parent.classList.contains('katex-display'))) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    }
-  );
-  
-  let node;
-  while (node = walker.nextNode()) {
-    textNodes.push(node as Text);
-  }
-  
-  return textNodes;
 }

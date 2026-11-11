@@ -14,4 +14,9 @@ describe('workspace recovery', () => {
     expect(recovered!.documents).toHaveLength(1); expect(recovered!.activeDocumentId).toBe('one'); expect(recovered!.split).toBe('50%');
   });
   it('rejects unknown workspace versions', () => { expect(validateWorkspace({ ...state, version: 7 })).toBeNull(); });
+  it('normalizes non-finite cursor values and clamps divider preferences', () => {
+    const recovered = validateWorkspace({ ...state, untitledCounter: Infinity, split: '95%', documents: [{ ...state.documents[0], cursor: { start: Infinity, end: 999, scrollTop: NaN } }] })!;
+    expect(recovered.untitledCounter).toBe(1); expect(recovered.split).toBe('80%');
+    expect(recovered.documents[0].cursor).toEqual({ start: 0, end: 11, scrollTop: 0 });
+  });
 });

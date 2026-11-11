@@ -1,7 +1,7 @@
 import { prepareBrowserPrint } from './browser-print.js';
+import { confirmDocumentClose } from './dialog.js';
 import { MarkdownEditor } from './editor.js';
 import { AuthoringTools } from './authoring.js';
-import * as bundledKatex from 'katex';
 import 'katex/dist/katex.min.css';
 import { WorkspaceTools } from './workspace-tools.js';
 import { WorkspaceStore, type WorkspaceState, type StoredDocument } from './storage.js';
@@ -16,16 +16,6 @@ import {
   type ExportScope,
   type UploadedMarkdownFile,
 } from './ui.js';
-
-// Extend window interface for KaTeX
-declare global {
-  interface Window {
-    katex: unknown;
-  }
-}
-
-// Use the same bundled renderer for authoring, page previews and PDF export.
-window.katex = bundledKatex;
 
 type ManagedDocument = StoredDocument;
 
@@ -58,6 +48,7 @@ class MD2PDFApp {
         setSettings: settings => {
           let active = this.getActiveDocument();
           if (!active) { active = this.createDocument(this.nextUntitledFilename(), this.editor.getContent()); this.documents.push(active); this.activeDocumentId = active.id; }
+          this.editor.setDocumentKey(active.id);
           active.settings = settings;
           this.renderActiveDocument(); this.refreshDocumentList();
         },
@@ -81,11 +72,24 @@ class MD2PDFApp {
 
       const equationDialog = document.querySelector<HTMLDialogElement>('.equation-dialog')!;
       equationDialog.addEventListener('equation-open', () => {
-        void import('./visual-math.js').then(module => module.installVisualMath(equationDialog)).catch(error => console.error('Visual math editor could not load:', error));
+        void import('./visual-math.js').then(module => {
+          module.installVisualMath(equationDialog);
+          equationDialog.querySelector('#visualMathStatus')?.remove();
+        }).catch(error => {
+          console.error('Visual math editor could not load:', error);
+          let status = equationDialog.querySelector<HTMLElement>('#visualMathStatus');
+          if (!status) {
+            status = document.createElement('p'); status.id = 'visualMathStatus'; status.setAttribute('role', 'status');
+            equationDialog.querySelector('.equation-body')!.prepend(status);
+          }
+          status.textContent = 'The visual equation editor could not load. You can still edit the LaTeX expression below.';
+          equationDialog.querySelector('.latex-source')?.setAttribute('open', '');
+        });
       });
       const textarea = document.getElementById('markdownEditor') as HTMLTextAreaElement;
       for (const event of ['click', 'keyup', 'select', 'scroll']) textarea.addEventListener(event, () => this.scheduleSave());
       window.addEventListener('pointerup', () => this.scheduleSave());
+      document.getElementById('paneDivider')!.addEventListener('keydown', () => this.scheduleSave());
       document.getElementById('sidebarToggleBtn')!.addEventListener('click', () => this.scheduleSave());
       document.getElementById('syncScroll')!.addEventListener('click', () => this.scheduleSave());
       window.addEventListener('pagehide', () => { void this.flushSave(); });
@@ -118,7 +122,7 @@ class MD2PDFApp {
 
       const decoded = decodeDocument(content);
       if (decoded.hasSettings) {
-        this.isSwitchingDocument = true; this.editor.setContent(decoded.content); this.isSwitchingDocument = false;
+        this.isSwitchingDocument = true; this.editor.setContent(decoded.content, this.activeDocumentId); this.isSwitchingDocument = false;
         content = decoded.content;
       }
       let active = this.getActiveDocument();
@@ -126,6 +130,7 @@ class MD2PDFApp {
         active = this.createDocument(this.nextUntitledFilename(), content);
         this.documents.push(active);
         this.activeDocumentId = active.id;
+        this.editor.setDocumentKey(active.id);
       }
 
       if (!active) {
@@ -154,7 +159,7 @@ class MD2PDFApp {
     });
 
     this.ui.onDocumentClose((documentId) => {
-      this.closeDocument(documentId);
+      void this.closeDocument(documentId);
     });
 
     this.ui.onFileSave(() => {
@@ -167,7 +172,6 @@ class MD2PDFApp {
     });
 
     this.ui.onExportContextRequest(() => {
-      void this.tools.refreshExportChecks();
       return this.buildExportModalContext();
     });
 
@@ -176,17 +180,13 @@ class MD2PDFApp {
     });
 
 
-    this.ui.onMathModeChange((mode) => {
-      this.pageManager.setMathMode(mode);
-      this.renderActiveDocument();
-      this.recomputeInactivePageCounts();
-      this.refreshDocumentList();
-      console.log(`Math mode changed to: ${mode}`);
-    });
-
     this.ui.onSettingsChange(() => {
-      const active = this.getActiveDocument();
-      if (active) active.settings = { ...active.settings, fontSize: this.ui.getFontSize(), margin: this.ui.getMargin(), pageSize: this.ui.getPageSize(), preset: 'custom' };
+      let active = this.getActiveDocument();
+      if (!active) {
+        active = this.createDocument(this.nextUntitledFilename(), this.editor.getContent());
+        this.documents.push(active); this.activeDocumentId = active.id; this.editor.setDocumentKey(active.id);
+      }
+      active.settings = { ...active.settings, fontSize: this.ui.getFontSize(), margin: this.ui.getMargin(), pageSize: this.ui.getPageSize(), preset: 'custom' };
       this.renderActiveDocument();
       this.recomputeInactivePageCounts();
       this.refreshDocumentList();
@@ -200,6 +200,7 @@ class MD2PDFApp {
       const initialDocument = this.createDocument(this.nextUntitledFilename(), initialContent);
       this.documents = [initialDocument];
       this.activeDocumentId = initialDocument.id;
+      this.editor.setDocumentKey(initialDocument.id);
       return;
     }
 
@@ -242,7 +243,7 @@ class MD2PDFApp {
     this.activeDocumentId = target.id;
 
     this.isSwitchingDocument = true;
-    this.editor.setContent(target.content);
+    this.editor.setContent(target.content, target.id);
     this.editor.setSelection(target.cursor.start, target.cursor.end);
     this.isSwitchingDocument = false;
 
@@ -276,18 +277,22 @@ class MD2PDFApp {
     this.ui.showNotification(`Renamed to ${unique}`, 'success');
   }
 
-  private closeDocument(documentId: string): void {
-    const closingIndex = this.documents.findIndex((documentItem) => documentItem.id === documentId);
+  private async closeDocument(documentId: string): Promise<void> {
+    let closingIndex = this.documents.findIndex((documentItem) => documentItem.id === documentId);
     if (closingIndex < 0) {
       return;
     }
 
     const closingDocument = this.documents[closingIndex];
+    if (!await confirmDocumentClose(closingDocument.filename)) return;
+    closingIndex = this.documents.findIndex(documentItem => documentItem.id === documentId);
+    if (closingIndex < 0) return;
     if (closingDocument.id === this.activeDocumentId) {
       this.syncActiveDocumentContentFromEditor();
     }
 
     this.documents.splice(closingIndex, 1);
+    this.editor.forgetDocumentHistory(closingDocument.id);
 
     if (this.documents.length === 0) {
       this.activeDocumentId = null;
@@ -296,8 +301,7 @@ class MD2PDFApp {
       this.editor.setContent('');
       this.isSwitchingDocument = false;
 
-      this.pageManager.updatePages(document.createElement('div'));
-      this.ui.refreshPreviewViewport();
+      this.renderActiveDocument();
       this.refreshDocumentList();
       this.ui.showNotification(`Closed ${closingDocument.filename}`, 'info');
       return;
@@ -309,7 +313,7 @@ class MD2PDFApp {
       this.activeDocumentId = replacement.id;
 
       this.isSwitchingDocument = true;
-      this.editor.setContent(replacement.content);
+      this.editor.setContent(replacement.content, replacement.id);
       this.editor.setSelection(replacement.cursor.start, replacement.cursor.end);
       this.isSwitchingDocument = false;
 
@@ -373,19 +377,24 @@ class MD2PDFApp {
   }
 
   private calculatePageCountForMarkdown(markdown: string, settings: DocumentSettings): number {
-    if (!markdown.trim()) {
+    if (!markdown.trim() && !settings.titlePage) {
       return 1;
     }
 
     const mathMode = this.pageManager.getMathMode();
     const savedStyle = document.documentElement.style.cssText;
+    const savedPreset = document.documentElement.dataset.documentPreset;
     const htmlContent = renderMarkdown(markdown, { mathMode: { type: mathMode }, settings });
     try {
       applyDocumentStyle(settings); this.ui.setDocumentPageSettings(settings);
-      return this.pageManager.calculatePageCount(htmlContent);
+      const counter = new PageManager('previewContainer');
+      counter.setSettings(settings);
+      return counter.calculatePageCount(htmlContent);
     } finally {
       this.ui.setDocumentPageSettings(this.getActiveDocument()?.settings ?? DEFAULT_SETTINGS);
       document.documentElement.style.cssText = savedStyle;
+      if (savedPreset === undefined) delete document.documentElement.dataset.documentPreset;
+      else document.documentElement.dataset.documentPreset = savedPreset;
     }
   }
 
@@ -494,19 +503,26 @@ class MD2PDFApp {
     this.syncActiveDocumentContentFromEditor();
     const selected = scope === 'all' ? this.documents : this.getActiveDocument() ? [this.getActiveDocument()!] : [];
     this.isExporting = true; this.ui.setExportBusy(true);
+    let cleanup: (() => void) | undefined;
     try {
       this.ui.setExportSummary('Preparing pages. Choose Save as PDF in the print dialog, with browser headers and footers turned off.');
-      await prepareBrowserPrint(selected.map(item => ({ filename: item.filename, content: encodeDocument(item.content, item.settings) })));
+      cleanup = await prepareBrowserPrint(selected.map(item => ({ filename: item.filename, content: encodeDocument(item.content, item.settings) })));
       this.ui.setExportBusy(false); this.ui.dismissExportDialog();
       window.print();
     } catch (error) {
+      cleanup?.();
       const message = error instanceof Error ? error.message : 'Could not prepare PDF pages.';
       this.ui.setExportSummary(message); this.showError(message);
+      void this.tools.refreshExportChecks();
     } finally { this.isExporting = false; this.ui.setExportBusy(false); }
   }
 
   private showError(message: string): void {
-    this.ui.showNotification(message, 'error');
+    if (this.ui) this.ui.showNotification(message, 'error');
+    else {
+      const error = document.createElement('p'); error.setAttribute('role', 'alert'); error.textContent = message;
+      document.body.append(error);
+    }
   }
 
   private async restoreWorkspace(): Promise<void> {
@@ -525,7 +541,7 @@ class MD2PDFApp {
         this.tools.updateSyncButton();
         const active = this.getActiveDocument();
         this.isSwitchingDocument = true;
-        this.editor.setContent(active?.content ?? '');
+        this.editor.setContent(active?.content ?? '', active?.id ?? null);
         this.editor.setSelection(active?.cursor.start ?? 0, active?.cursor.end ?? 0);
         this.isSwitchingDocument = false;
       }
@@ -600,14 +616,24 @@ class MD2PDFApp {
       sandbox.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden;';
       document.body.append(sandbox);
       const savedStyle = document.documentElement.style.cssText;
+      const savedPreset = document.documentElement.dataset.documentPreset;
       try {
-        applyDocumentStyle(item.settings); this.ui.setDocumentPageSettings(item.settings);
-        const manager = new PageManager(sandbox.id); manager.setSettings(item.settings); manager.updatePages(content);
+        try {
+          applyDocumentStyle(item.settings); this.ui.setDocumentPageSettings(item.settings);
+          sandbox.style.cssText += document.documentElement.style.cssText;
+          const manager = new PageManager(sandbox.id); manager.setSettings(item.settings); manager.updatePages(content);
+        } finally {
+          this.ui.setDocumentPageSettings(this.getActiveDocument()?.settings ?? DEFAULT_SETTINGS);
+          document.documentElement.style.cssText = savedStyle;
+          if (savedPreset === undefined) delete document.documentElement.dataset.documentPreset;
+          else document.documentElement.dataset.documentPreset = savedPreset;
+        }
+        // Waiting must not leave a global-style restoration pending: the user
+        // may close the check dialog and change documents while images load.
+        await waitForImages(sandbox);
         issues.push(...inspectOutput(sandbox, item.content).map(issue => ({ ...issue, documentId: item.id, filename: item.filename })));
       } finally {
         sandbox.remove();
-        this.ui.setDocumentPageSettings(this.getActiveDocument()?.settings ?? DEFAULT_SETTINGS);
-        document.documentElement.style.cssText = savedStyle;
       }
     }
     return issues;

@@ -1,5 +1,7 @@
 # todonowPRD.md — MD2PDF Phase 1 Completion & Quality Assurance
 
+> **Historical plan, retained for context.** Phase claims, SVG mode, server/CLI export and previous acceptance statements below are not current guarantees. The supported scope is small Markdown documents with HTML KaTeX and browser PDF printing. Use [README.md](README.md), [current use cases](docs/USE_CASES.md), and the [code review](docs/CODE_REVIEW.md) for current behaviour and verification.
+
 ## Executive Summary
 
 The MD2PDF repository contains a **fully functional Phase 1 implementation** that satisfies all core requirements from ProjectPlan.md. The application successfully renders markdown with live preview, A4 pagination, KaTeX math support, and file handling capabilities.

@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { DEFAULT_SETTINGS, type DocumentSettings, validLabel } from './document.js';
 
 export interface MathMode {
-  type: 'html' | 'svg';
+  type: 'html';
 }
 
 export interface MarkdownOptions {
@@ -145,6 +145,19 @@ export function renderMarkdown(markdown: string, options: MarkdownOptions = { ma
         element.dataset.sourceEnd = String(offset + matches[i].index! + matches[i][0].length);
       }
     });
+    let imageOffset = 0;
+    const mappedImages = new Set<Element>();
+    marked.walkTokens(single, inline => {
+      if (inline.type !== 'image') return;
+      const at = token.raw.indexOf(inline.raw, imageOffset);
+      if (at < 0) return;
+      imageOffset = at + inline.raw.length;
+      const image = Array.from(fragment.querySelectorAll('img')).find(element => !mappedImages.has(element) && element.getAttribute('src') === inline.href);
+      if (!image) return;
+      mappedImages.add(image);
+      image.dataset.sourceStart = String(offset + at);
+      image.dataset.sourceEnd = String(offset + imageOffset);
+    });
     container.append(...Array.from(fragment.childNodes));
     offset += token.raw.length;
   }
@@ -182,11 +195,11 @@ export function decorateDocument(container: HTMLElement, settings: DocumentSetti
   });
   container.querySelectorAll<HTMLElement>('table').forEach(table => {
     const caption = table.nextElementSibling;
-    const match = caption?.tagName === 'P' ? /^: (.*?)\s*\{#(tab:[\w:-]+)\}$/.exec(caption.textContent ?? '') : null;
+    const match = caption?.tagName === 'P' ? /^: (.*?)(?:[ \t]+\{#(tab:[\w:-]+)\})?$/.exec(caption.textContent ?? '') : null;
     if (match) {
       const figure = document.createElement('figure');
       figure.className = 'table-figure';
-      figure.dataset.label = match[2];
+      if (match[2]) figure.dataset.label = match[2];
       figure.dataset.sourceStart = table.dataset.sourceStart;
       figure.dataset.sourceEnd = caption!.getAttribute('data-source-end') ?? table.dataset.sourceEnd;
       table.replaceWith(figure);

@@ -81,8 +81,26 @@ describe('structured documents', () => {
     const source = '```tex\n$$\n```';
     expect(inspectOutput(render(source), source)).toEqual([]);
   });
+  it('ignores math-like content in multi-backtick spans, long fences and indented code', () => {
+    for (const source of ['Use ``literal ` $$ text`` here.', '````tex\n$$\n```\n````', '    $$\n', '~~~\n$$']) {
+      expect(inspectOutput(render(source), source)).toEqual([]);
+    }
+  });
 });
 describe('table grid round-trips', () => {
+  it('preserves a caption when the optional reference label is blank', () => {
+    const text = tableMarkdown([['Reading'],['10']],['left'],'Measured reading');
+    expect(tableAt(text,0)?.caption).toBe('Measured reading');
+    expect(tableAt(text,0)?.label).toBe('');
+    const root=renderMarkdown(text);
+    expect(root.querySelector('figcaption')?.textContent).toBe('Table 1. Measured reading');
+  });
+  it('maps separate inline images to their own editable source ranges', () => {
+    const source='Before ![one](https://example.com/one.png) between ![two](https://example.com/two.png) after.';
+    const images=renderMarkdown(source).querySelectorAll('img');
+    expect(images).toHaveLength(2);
+    expect(source.slice(Number(images[1].dataset.sourceStart),Number(images[1].dataset.sourceEnd))).toBe('![two](https://example.com/two.png)');
+  });
   it('retains alignment and literal pipes', () => {
     const text = tableMarkdown([['A', 'B'], ['one | two', 'three']], ['left', 'right'], 'Results', 'tab:results');
     const table = tableAt(text, 0)!;

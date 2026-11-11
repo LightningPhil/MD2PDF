@@ -90,6 +90,8 @@ try {
   await refs.locator('select').selectOption('fig:example');
   await refs.getByRole('button', { name: 'Insert reference', exact: true }).click();
   assert.equal(await page.locator('.document-reference').last().textContent(), 'Figure 1');
+  assert.equal(await editor.evaluate(el => el.selectionStart), (await editor.inputValue()).length,
+    'Closing an insertion dialog must retain the cursor after the inserted reference');
   console.log('Embedded images, captions and cross-references passed.');
 
   await page.locator('#openFind').click();
@@ -171,11 +173,22 @@ try {
   await page.locator('#exportCheckResults .output-issue').first().waitFor();
   assert.ok((await page.locator('#exportCheckResults').innerText()).includes('Untitled-2.md'));
   await page.locator('#exportStartBtn').click();
+  await page.locator('#exportModalSummary').filter({ hasText: 'before exporting' }).waitFor();
+  assert.equal(await page.locator('#browserPrintOutput').count(), 0);
+  assert.equal(await page.evaluate(() => document.body.dataset.printRequested), undefined);
+  await page.locator('#exportDismissBtn').click();
+  await page.locator('#documentList .document-item').nth(1).click();
+  await editor.fill('# Repaired document\n\nA short note ready for review.\n\n| Reading | Value |\n| --- | --- |\n| Sample | 10 |');
+  await page.locator('#exportPdfBtn').click();
+  await page.locator('#exportScopeAll').check();
+  await page.getByText('No equation, image, reference, or layout problems found.').waitFor();
+  await page.locator('#exportStartBtn').click();
   await page.waitForFunction(() => document.body.dataset.printRequested === 'true');
   assert.equal(await page.locator('#browserPrintOutput > section').count(), 3);
   await page.pdf({ path: 'tmp/workspace-tests/all-documents.pdf', preferCSSPageSize: true, printBackground: true });
   await page.evaluate(() => { window.dispatchEvent(new Event('afterprint')); delete document.body.dataset.printRequested; });
   console.log('Combined PDF export and checks across all open documents passed.');
+  await page.locator('#documentList .document-item').first().click();
   await page.locator('#focusWriting').click();
   assert.equal(await page.locator('.preview-pane').isVisible(), false);
   await editor.focus(); await editor.press('Escape'); assert.equal(await page.locator('.preview-pane').isVisible(), true);

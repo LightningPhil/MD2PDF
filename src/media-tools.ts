@@ -12,7 +12,7 @@ export function tableAt(content: string, position: number): TableData | null {
     if (token.type === 'table' && position >= offset && position <= offset + token.raw.length) {
       const table = token as Tokens.Table;
       const rest = content.slice(offset + token.raw.length);
-      const caption = /^\s*: (.*?)\s*\{#(tab:[\w:-]+)\}(?:\n|$)/.exec(rest);
+      const caption = /^\s*: ([^\n]*?)(?:[ \t]+\{#(tab:[\w:-]+)\})?[ \t]*(?:\n|$)/.exec(rest);
       const plain = (cell: Tokens.TableCell) => cell.text.replace(/\\\|/g, '|');
       return { start: offset, end: offset + token.raw.length + (caption?.[0].length ?? 0), cells: [table.header.map(plain), ...table.rows.map(row => row.map(plain))], align: table.align.map(a => a || 'left'), caption: caption?.[1] ?? '', label: caption?.[2] ?? '' };
     }
@@ -23,7 +23,8 @@ export function tableAt(content: string, position: number): TableData | null {
 export function tableMarkdown(cells: string[][], align: string[], caption = '', label = ''): string {
   const row = (values: string[]) => '| ' + values.map(value => value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')).join(' | ') + ' |';
   const separators = align.map(a => a === 'center' ? ':---:' : a === 'right' ? '---:' : ':---');
-  return [row(cells[0]), row(separators), ...cells.slice(1).map(row)].join('\n') + (label ? `\n\n: ${caption || 'Results'} {#${label}}` : '') + '\n\n';
+  return [row(cells[0]), row(separators), ...cells.slice(1).map(row)].join('\n')
+    + (caption || label ? `\n\n: ${caption || 'Results'}${label ? ` {#${label}}` : ''}` : '') + '\n\n';
 }
 export class MediaTools {
   private tableDialog: HTMLDialogElement;
@@ -32,6 +33,7 @@ export class MediaTools {
   private imageRange = { start: 0, end: 0 };
   private imageWidth = 0;
   private imageHeight = 0;
+  private imageLoadRevision = 0;
   constructor(private editor: MarkdownEditor) {
     const table = makeDialog('Table editor', `<p class="tool-help">The first row contains column headings. Edit cells directly and choose each column’s alignment.</p><div class="table-grid-scroll"><table id="tableGrid"></table></div><div class="tool-inline"><button type="button" id="addTableRow">Add row</button><button type="button" id="addTableColumn">Add column</button></div><label>Caption<input id="tableCaption" maxlength="300"></label><label>Reference label (optional)<input id="tableLabel" placeholder="tab:results"></label><p class="tool-help">Add a label to number this table and reference it elsewhere.</p>`, 'Insert table');
     this.tableDialog = table.dialog;
@@ -41,15 +43,16 @@ export class MediaTools {
       if (label && (!validLabel(label) || !label.startsWith('tab:'))) { dialogError(table.dialog, 'Use a table label such as tab:results.'); return; }
       const caption = table.dialog.querySelector<HTMLInputElement>('#tableCaption')!.value;
       const prefix = this.table.start > 0 && !editor.getContent().slice(0, this.table.start).endsWith('\n\n') ? '\n\n' : '';
+      table.dialog.close();
       editor.replaceRange(this.table.start, this.table.end, prefix + tableMarkdown(this.table.cells, this.table.align, caption, label));
-      table.dialog.close(); editor.focus();
+      editor.focus();
     });
     table.dialog.querySelector('#addTableRow')!.addEventListener('click', () => {
-      if (this.table.cells.length >= 101) return;
+      if (this.table.cells.length >= 101) { dialogError(table.dialog, 'Tables support up to 100 data rows.'); return; }
       this.table.cells.push(this.table.align.map(() => '')); this.drawGrid();
     });
     table.dialog.querySelector('#addTableColumn')!.addEventListener('click', () => {
-      if (this.table.align.length >= 20) return;
+      if (this.table.align.length >= 20) { dialogError(table.dialog, 'Tables support up to 20 columns.'); return; }
       this.table.cells.forEach(row => row.push('')); this.table.align.push('left'); this.drawGrid();
     });
     const image = makeDialog('Image & caption', `<label>Choose an image<input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><label>Or image URL<input id="imageSource" placeholder="https://…" aria-describedby="imageUrlHelp"></label><p id="imageUrlHelp" class="tool-help">Pasted and uploaded images are embedded and included in portable packages. Remote image URLs require a connection.</p><img id="imagePreview" alt="Image preview" hidden><label>Alternative text<input id="imageAlt" maxlength="500" required placeholder="Describe what the image shows"></label><div class="tool-grid"><label>Width (% of page)<input id="imageSize" type="number" min="10" max="100" value="100"></label><label>Reference label (optional)<input id="imageLabel" placeholder="fig:diagram"></label></div><label>Caption<input id="imageCaption" maxlength="500"></label>`, 'Insert image');
@@ -58,20 +61,23 @@ export class MediaTools {
       const file = image.dialog.querySelector<HTMLInputElement>('#imageFile')!.files?.[0];
       if (file) void this.loadImage(file);
     });
-    image.dialog.querySelector('#imageSource')!.addEventListener('input', () => this.previewImage());
+    image.dialog.querySelector('#imageSource')!.addEventListener('input', () => { this.imageLoadRevision++; this.previewImage(); });
+    image.dialog.addEventListener('close', () => { this.imageLoadRevision++; });
     image.form.addEventListener('submit', event => {
       event.preventDefault();
       const value = (id: string) => image.dialog.querySelector<HTMLInputElement>(`#${id}`)!.value.trim();
       const src = value('imageSource');
       const label = value('imageLabel');
+      if (!value('imageAlt')) { dialogError(image.dialog, 'Describe the image in Alternative text.'); return; }
       if (!/^(https?:\/\/|data:image\/(png|jpeg|webp|gif);base64,)/i.test(src)) { dialogError(image.dialog, 'Choose an image file or enter an http/https image URL.'); return; }
       if (label && (!validLabel(label) || !label.startsWith('fig:'))) { dialogError(image.dialog, 'Use a figure label such as fig:diagram.'); return; }
       const width = Math.min(100, Math.max(10, Number(value('imageSize')) || 100));
       const dimensions = this.imageWidth && this.imageHeight ? ` width="${this.imageWidth}" height="${this.imageHeight}"` : '';
       const html = `<figure${label ? ` data-label="${label}"` : ''}><img src="${escapeHtml(src)}" alt="${escapeHtml(value('imageAlt'))}"${dimensions} style="width:${width}%;height:auto">${value('imageCaption') ? `<figcaption>${escapeHtml(value('imageCaption'))}</figcaption>` : ''}</figure>`;
       const before = editor.getContent().slice(0, this.imageRange.start);
+      image.dialog.close();
       editor.replaceRange(this.imageRange.start, this.imageRange.end, (before && !before.endsWith('\n\n') ? '\n\n' : '') + html + '\n\n');
-      image.dialog.close(); editor.focus();
+      editor.focus();
     });
     const textarea = document.getElementById('markdownEditor')!;
     textarea.addEventListener('paste', event => {
@@ -103,6 +109,7 @@ export class MediaTools {
     this.drawGrid(); showDialog(this.tableDialog);
   }
   openImage(): void {
+    this.imageLoadRevision++;
     const content = this.editor.getContent();
     this.imageRange = this.editor.getSelection();
     let source = '', alt = '', caption = '', label = '', size = '100';
@@ -121,11 +128,17 @@ export class MediaTools {
       let offset = 0;
       for (const token of marked.lexer(content)) {
         if (token.type === 'paragraph' && this.imageRange.start >= offset && this.imageRange.start <= offset + token.raw.length) {
-          const image = (token as Tokens.Paragraph).tokens.find(t => t.type === 'image') as Tokens.Image | undefined;
-          if (image) {
-            const start = offset + token.raw.indexOf(image.raw);
+          let consumed = 0;
+          marked.walkTokens([token], candidate => {
+            if (candidate.type !== 'image') return;
+            const image = candidate as Tokens.Image;
+            const relative = token.raw.indexOf(image.raw, consumed);
+            if (relative < 0) return;
+            consumed = relative + image.raw.length;
+            const start = offset + relative;
+            if (this.imageRange.start < start || this.imageRange.start >= start + image.raw.length) return;
             this.imageRange = { start, end: start + image.raw.length }; source = image.href; alt = image.text; caption = image.title || '';
-          }
+          });
         }
         offset += token.raw.length;
       }
@@ -167,21 +180,24 @@ export class MediaTools {
     });
   }
   private async loadImage(file: File): Promise<void> {
+    const revision = ++this.imageLoadRevision;
     try {
       if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error('Choose a PNG, JPEG, WebP, or GIF image.');
       if (file.size > 20 * 1024 * 1024) throw new Error('Choose an image smaller than 20 MB.');
       const src = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('Could not read this image.')); reader.readAsDataURL(file);
       });
+      if (revision !== this.imageLoadRevision || !this.imageDialog.open) return;
       this.imageDialog.querySelector<HTMLInputElement>('#imageSource')!.value = src;
       this.imageDialog.querySelector<HTMLInputElement>('#imageAlt')!.value = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
       this.previewImage();
-    } catch (error) { dialogError(this.imageDialog, error instanceof Error ? error.message : 'Could not load image.'); }
+    } catch (error) { if (revision === this.imageLoadRevision && this.imageDialog.open) dialogError(this.imageDialog, error instanceof Error ? error.message : 'Could not load image.'); }
   }
   private previewImage(): void {
     const image = this.imageDialog.querySelector<HTMLImageElement>('#imagePreview')!;
     const src = this.imageDialog.querySelector<HTMLInputElement>('#imageSource')!.value;
     image.hidden = !src;
+    dialogError(this.imageDialog, '');
     this.imageWidth = 0; this.imageHeight = 0;
     image.onload = () => { this.imageWidth = image.naturalWidth; this.imageHeight = image.naturalHeight; };
     image.onerror = () => dialogError(this.imageDialog, 'Image could not load. Check the URL or choose a local file.');

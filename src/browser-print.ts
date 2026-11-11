@@ -1,13 +1,15 @@
 import { applyDocumentStyle, decodeDocument } from './document.js';
 import { renderMarkdown } from './markdown.js';
 import { PageManager } from './pages.js';
-import { waitForImages } from './preflight.js';
+import { inspectOutput, waitForImages } from './preflight.js';
 
 const sizes = { a4: [210, 297], letter: [215.9, 279.4], legal: [215.9, 355.6], tabloid: [279.4, 431.8], a3: [297, 420] };
+let pendingCleanup: (() => void) | undefined;
 /** Prepare vector/text pages for the browser's native Save as PDF destination. */
 export async function prepareBrowserPrint(documents: { filename: string; content: string }[]): Promise<() => void> {
   if (!documents.length) throw new Error('Open a Markdown document first.');
   if (documents.some(doc => /\.tex$/i.test(doc.filename))) throw new Error('PDF export supports Markdown documents. Save any legacy .tex source separately and close it before exporting all files.');
+  pendingCleanup?.();
   document.getElementById('browserPrintOutput')?.remove();
   document.getElementById('browserPrintStyle')?.remove();
   const output = document.createElement('div'); output.id = 'browserPrintOutput';
@@ -17,7 +19,12 @@ export async function prepareBrowserPrint(documents: { filename: string; content
   const previousStyle = document.documentElement.style.cssText;
   const previousPreset = document.documentElement.dataset.documentPreset;
   const previousTitle = document.title;
-  const cleanup = () => { document.body.classList.remove('browser-print-ready'); output.remove(); style.remove(); document.title = previousTitle; window.removeEventListener('afterprint', cleanup); };
+  const cleanup = () => {
+    document.body.classList.remove('browser-print-ready'); output.remove(); style.remove();
+    document.title = previousTitle; window.removeEventListener('afterprint', cleanup);
+    if (pendingCleanup === cleanup) pendingCleanup = undefined;
+  };
+  pendingCleanup = cleanup;
   try {
     await document.fonts.ready;
     for (const [index, item] of documents.entries()) {
@@ -31,6 +38,10 @@ export async function prepareBrowserPrint(documents: { filename: string; content
       const section = document.createElement('section'); section.id = `browserPrintDocument${index}`;
       section.style.cssText = document.documentElement.style.cssText; output.append(section);
       const manager = new PageManager(section.id); manager.setSettings(settings); manager.updatePages(content);
+      document.documentElement.style.cssText = previousStyle;
+      await waitForImages(section, 10000);
+      const errors = inspectOutput(section, decoded.content).filter(issue => issue.severity === 'error');
+      if (errors.length) throw new Error(`Fix ${errors.length} output error${errors.length === 1 ? '' : 's'} in ${item.filename} before exporting: ${errors.slice(0, 3).map(issue => issue.message).join(' ')}`);
       // Avoid duplicate destinations when multiple documents have identical headings/labels.
       const targets = new Map<string, string>();
       section.querySelectorAll<HTMLElement>('[id]').forEach(el => { const old = el.id; el.id = `print-${index}-${old}`; targets.set(old, el.id); });

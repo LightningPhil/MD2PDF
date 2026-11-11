@@ -1,4 +1,5 @@
 type EditorSnapshot = { content: string; start: number; end: number };
+type EditorHistory = { content: string; undo: EditorSnapshot[]; redo: EditorSnapshot[] };
 
 export class MarkdownEditor {
   private textarea: HTMLTextAreaElement;
@@ -6,6 +7,8 @@ export class MarkdownEditor {
   private undoStack: EditorSnapshot[] = [];
   private redoStack: EditorSnapshot[] = [];
   private lastState: EditorSnapshot;
+  private historyByDocument = new Map<string, EditorHistory>();
+  private documentKey: string | null = null;
   
   constructor(textareaId: string) {
     const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -28,12 +31,25 @@ export class MarkdownEditor {
    * Sets the editor content
    * @param content - The markdown content to set
    */
-  setContent(content: string): void {
+  setContent(content: string, documentKey: string | null = null): void {
+    if (this.documentKey) this.historyByDocument.set(this.documentKey, {
+      content: this.getContent(), undo: this.undoStack, redo: this.redoStack,
+    });
+    const history = documentKey ? this.historyByDocument.get(documentKey) : undefined;
+    this.documentKey = documentKey;
     this.textarea.value = content;
-    this.undoStack = [];
-    this.redoStack = [];
+    this.undoStack = history?.content === content ? history.undo : [];
+    this.redoStack = history?.content === content ? history.redo : [];
     this.lastState = this.snapshot();
     this.notifyChange();
+  }
+
+  /** Attach a newly created draft without discarding its first edits. */
+  setDocumentKey(key: string): void { this.documentKey = key; }
+
+  forgetDocumentHistory(key: string): void {
+    this.historyByDocument.delete(key);
+    if (this.documentKey === key) this.documentKey = null;
   }
   
   /**
@@ -159,7 +175,7 @@ export class MarkdownEditor {
       this.lastState = this.snapshot();
     });
     
-    // Handle tab key for indentation
+    // Tab and Shift+Tab retain their normal keyboard navigation behaviour.
     this.textarea.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
         e.preventDefault();
@@ -167,9 +183,9 @@ export class MarkdownEditor {
         else this.undo();
         return;
       }
-      if (e.key === 'Tab') {
+      if ((e.ctrlKey || e.metaKey) && e.key === ']') {
         e.preventDefault();
-        this.insertText('  '); // Insert two spaces
+        this.insertText('  ');
       }
     });
     

@@ -1,122 +1,65 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { renderMath } from '../src/katex'
+// @vitest-environment jsdom
+import { describe, it, expect } from 'vitest';
+import { renderMath } from '../src/katex';
+import { renderMarkdown } from '../src/markdown';
+import { inspectOutput } from '../src/preflight';
 
-// Mock KaTeX global
-const mockKatex = {
-  renderToString: vi.fn((math: string, options: any) => {
-    return `<span class="katex">${math}</span>`
-  })
-}
-
-describe('renderMath', () => {
-  let container: HTMLElement
-
-  beforeEach(() => {
-    container = document.createElement('div')
-    // Set up global katex mock
-    ;(globalThis as any).katex = mockKatex
-    vi.clearAllMocks()
-  })
-
-  afterEach(() => {
-    delete (globalThis as any).katex
-  })
-
-  it('handles element with no math expressions', () => {
-    container.innerHTML = '<p>Plain text without math</p>'
-    renderMath(container, 'html')
-    expect(mockKatex.renderToString).not.toHaveBeenCalled()
-  })
-
-  it('renders inline math expressions', () => {
-    container.innerHTML = '<p>The formula $E = mc^2$ is famous</p>'
-    renderMath(container, 'html')
-    expect(mockKatex.renderToString).toHaveBeenCalledWith(
-      'E = mc^2',
-      expect.objectContaining({ displayMode: false })
-    )
-  })
-
-  it('renders display math expressions', () => {
-    // Display math uses $$ delimiters which are processed on innerHTML
-    container.innerHTML = '<p>$$\\int_0^1 x dx$$</p>'
-    renderMath(container, 'html')
-    // The renderMath function processes display math via innerHTML replace
-    expect(mockKatex.renderToString).toHaveBeenCalled()
-  })
-
-  it('renders display placeholders with preserved matrix row breaks', () => {
-    const matrix = `A =
-\\begin{bmatrix}
-1 & 2 \\\\
-3 & 4
-\\end{bmatrix}`
-    container.innerHTML = `<div class="math-display-placeholder" data-math="${encodeURIComponent(matrix)}"></div>`
-
-    renderMath(container, 'html')
-
-    expect(mockKatex.renderToString).toHaveBeenCalledWith(
-      expect.stringContaining('1 & 2 \\\\'),
-      expect.objectContaining({ displayMode: true })
-    )
-  })
-
-  it('uses html output mode when specified', () => {
-    container.innerHTML = '<p>$x$</p>'
-    renderMath(container, 'html')
-    expect(mockKatex.renderToString).toHaveBeenCalledWith(
-      'x',
-      expect.objectContaining({ output: 'html' })
-    )
-  })
-
-  it('uses svg output mode when specified', () => {
-    container.innerHTML = '<p>$x$</p>'
-    renderMath(container, 'svg')
-    expect(mockKatex.renderToString).toHaveBeenCalledWith(
-      'x',
-      expect.objectContaining({ output: 'svg' })
-    )
-  })
-
-  it('handles multiple inline math expressions', () => {
-    container.innerHTML = '<p>$a$ and $b$ and $c$</p>'
-    renderMath(container, 'html')
-    expect(mockKatex.renderToString).toHaveBeenCalledTimes(3)
-  })
-
-  it('skips already-rendered KaTeX elements', () => {
-    container.innerHTML = '<span class="katex">already rendered</span><p>$new$</p>'
-    renderMath(container, 'html')
-    // Should only render the new math, not re-render existing
-    expect(mockKatex.renderToString).toHaveBeenCalledWith(
-      'new',
-      expect.any(Object)
-    )
-  })
-
-  it('gracefully handles missing katex library', () => {
-    delete (globalThis as any).katex
-    container.innerHTML = '<p>$x$</p>'
-    // Should not throw
-    expect(() => renderMath(container, 'html')).not.toThrow()
-  })
-
-  it('handles KaTeX rendering errors gracefully', () => {
-    mockKatex.renderToString.mockImplementationOnce(() => {
-      throw new Error('Invalid LaTeX')
-    })
-    container.innerHTML = '<p>$invalid{$</p>'
-    // Should not throw, should keep original text
-    expect(() => renderMath(container, 'html')).not.toThrow()
-  })
-
-  it('wraps display math in katex-display div', () => {
-    // Test that double-dollar display math gets wrapped
-    // Note: The display math regex requires the content to span multiple chars
-    container.innerHTML = '<div>$$abc$$</div>'
-    renderMath(container, 'html')
-    // Display math processing happens on innerHTML with $$...$$ pattern
-    expect(container.innerHTML).toContain('katex')  
-  })
-})
+const render = (source: string) => { const root = renderMarkdown(source); renderMath(root); return root; };
+describe('safe Markdown to mathematical output', () => {
+  it('renders real inline and display notation, preserving source coordinates', () => {
+    const root = render('Use $x^2$ and $y$.\n\n$$\\frac{a}{b}$$');
+    expect(root.querySelectorAll('.rendered-equation')).toHaveLength(3);
+    expect(root.querySelectorAll('.katex-html')).toHaveLength(3);
+    expect(root.querySelector('.rendered-equation')?.getAttribute('data-source-start')).toBe('4');
+    expect(root.querySelector('.equation-block .katex-display')).not.toBeNull();
+  });
+  it('retains matrix row separators through the real renderer', () => {
+    const root = render('$$\n\\begin{bmatrix}1 & 2 \\\\ 3 & 4\\end{bmatrix}\n$$');
+    expect(root.querySelector('.katex-error')).toBeNull();
+    expect(root.querySelector('.katex .mtable')).not.toBeNull();
+  });
+  it.each(['`Example $x$ must remain literal`', '```tex\n$$x$$\n```', '~~~tex\n$x$\n~~~'])('keeps code literal: %s', source => {
+    const root = render(source);
+    expect(root.querySelector('code')?.textContent).toContain('$');
+    expect(root.querySelector('.katex')).toBeNull();
+  });
+  it('retains escaped currency without interpreting it as math', () => {
+    const root = render('Prices are \\$5 and \\$10.');
+    expect(root.textContent).toBe('Prices are $5 and $10.\n');
+    expect(root.querySelector('.katex')).toBeNull();
+  });
+  it.each([
+    '`<img src=x onerror="document.body.dataset.auditInjection=1"> $x$`',
+    '```html\n<img src=x onerror="alert(1)"> $$x$$\n```',
+    '&lt;img src=x onerror="alert(1)"&gt; and $x$',
+  ])('never turns escaped text into executable HTML: %s', source => {
+    const root = render(source);
+    expect(root.querySelector('img,script,[onerror]')).toBeNull();
+    expect(root.textContent).toContain('<img');
+  });
+  it('retains sanitisation of imported raw HTML alongside mathematics', () => {
+    const root = render('<img src=x onerror="alert(1)"><script>alert(1)</script>\n\n$x$');
+    expect(root.querySelector('[onerror],script')).toBeNull();
+    expect(root.querySelector('.katex')).not.toBeNull();
+  });
+  it('does not re-render already rendered equations', () => {
+    const root = render('$x$'); const before=root.innerHTML;
+    renderMath(root); expect(root.innerHTML).toBe(before);
+  });
+  it('keeps invalid equations readable and diagnosable', () => {
+    const root = render('$\\notACommand{x}$');
+    expect(root.querySelector('.katex-error')?.textContent).toBe('\\notACommand{x}');
+    expect(inspectOutput(root, '').some(issue=>issue.severity==='error')).toBe(true);
+  });
+  it('validates display-only commands using the same placement as the renderer', () => {
+    const source = '$$x=1\\tag{A}$$';
+    const root = render(source);
+    expect(root.querySelector('.katex-error')).toBeNull();
+    expect(inspectOutput(root, source)).toEqual([]);
+    expect(inspectOutput(render('$x\\tag{A}$'), '').some(issue => issue.severity === 'error')).toBe(true);
+  });
+  it('does not scan arbitrary DOM text or HTML attributes for dollar signs', () => {
+    const root=document.createElement('div'); root.innerHTML='<p title="$x$">$y$</p>';
+    const before=root.innerHTML; renderMath(root); expect(root.innerHTML).toBe(before);
+  });
+});

@@ -20,6 +20,35 @@ export function showDialog(dialog: HTMLDialogElement): void {
 export function dialogError(dialog: HTMLDialogElement, message: string): void {
   dialog.querySelector('.tool-dialog-message')!.textContent = message;
 }
+
+/** A cancellable filename prompt using the same keyboard/focus behaviour as the authoring tools. */
+export function requestFilename(filename: string): Promise<string | null> {
+  const { dialog, form } = makeDialog('Rename document', '<label>Filename<input name="filename" maxlength="255" autocomplete="off"></label>', 'Rename');
+  const input = form.elements.namedItem('filename') as HTMLInputElement;
+  input.value = filename;
+  return new Promise(resolve => {
+    let result: string | null = null;
+    dialog.addEventListener('close', () => { resolve(result); dialog.remove(); }, { once: true });
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      if (!input.value.trim()) { dialogError(dialog, 'Enter a filename.'); input.focus(); return; }
+      result = input.value.trim(); dialog.close();
+    });
+    showDialog(dialog); input.focus(); input.select();
+  });
+}
+
+export function confirmDocumentClose(filename: string): Promise<boolean> {
+  const { dialog, form } = makeDialog('Close document?', '<p class="close-document-name"></p><p>This removes its locally saved draft and undo history. If you need a copy, choose Cancel and use Save or Save package first.</p>', 'Close document');
+  dialog.querySelector('.close-document-name')!.textContent = filename;
+  return new Promise(resolve => {
+    let confirmed = false;
+    dialog.addEventListener('close', () => { resolve(confirmed); dialog.remove(); }, { once: true });
+    form.addEventListener('submit', event => { event.preventDefault(); confirmed = true; dialog.close(); });
+    showDialog(dialog);
+    (dialog.querySelector('.tool-dialog-actions [data-cancel]') as HTMLButtonElement).focus();
+  });
+}
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

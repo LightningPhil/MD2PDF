@@ -153,7 +153,7 @@ function isSplittableElement(element: HTMLElement): boolean {
     return element.children.length > 1;
   }
 
-  if (tag === 'BLOCKQUOTE' || tag === 'DIV' || tag === 'SECTION' || tag === 'ARTICLE') {
+  if (tag === 'BLOCKQUOTE' || tag === 'DIV' || tag === 'SECTION' || tag === 'ARTICLE' || tag === 'NAV') {
     return element.children.length > 1 || collectTextBreakpoints(element).length > 1;
   }
 
@@ -174,10 +174,9 @@ function splitBlockToFit(
   }
 
   if (block.tagName === 'UL' || block.tagName === 'OL') {
-    const splitList = splitListByItems(block, currentBlocks, pageHeightPx, measureContainer);
-    if (splitList) {
-      return splitList;
-    }
+    // Splitting within an item duplicates its marker and corrupts numbering.
+    // Keep an oversized item intact so output checks can require a manual split.
+    return splitListByItems(block, currentBlocks, pageHeightPx, measureContainer);
   }
 
   const splitByChildren = splitContainerByChildren(block, currentBlocks, pageHeightPx, measureContainer);
@@ -251,6 +250,10 @@ function splitContainerByChildren(
   pageHeightPx: number,
   measureContainer: HTMLElement,
 ): SplitResult | null {
+  // Splitting a paragraph by its inline element children drops the text between
+  // them. Mixed content must use DOM ranges, which preserve every text node.
+  if (!['BLOCKQUOTE', 'DIV', 'SECTION', 'ARTICLE', 'NAV'].includes(container.tagName)
+    || Array.from(container.childNodes).some(node => node.nodeType === Node.TEXT_NODE && !!node.textContent?.trim())) return null;
   const children = Array.from(container.children) as HTMLElement[];
   if (children.length < 2) {
     return null;
@@ -397,7 +400,7 @@ function collectTextBreakpoints(element: HTMLElement): TextBreakpoint[] {
     const node = current as Text;
     const text = node.textContent ?? '';
 
-    if (node.parentElement?.closest('.rendered-equation, .katex, math, svg')) {
+    if (node.parentElement?.closest('.rendered-equation, .katex, math, svg, pre, table, figure')) {
       current = walker.nextNode();
       continue;
     }

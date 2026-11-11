@@ -1,50 +1,16 @@
-# MD2PDF Install Instructions (for Copilot)
+# Local installation notes
 
-Run these commands from the project root:
-`c:\Users\PhilipLeichauer\Desktop\WEB Dev\MD2PDF`
-
-## 1. Prerequisites
-
-- Node.js 18+ installed
-- npm available in terminal
-
-Optional check:
+Use Node.js 24 or newer and run commands from the repository root. Current commands come from [package.json](package.json); see [README](README.md) for authoring and export.
 
 ```powershell
-node -v
-npm -v
-```
-
-## 2. Install project dependencies
-
-```powershell
-npm install
-```
-
-## 3. Install Playwright Chromium
-
-```powershell
-npx playwright install chromium
-```
-
-If `npx` has issues, use:
-
-```powershell
-npm exec playwright install chromium
-```
-
-## 4. Verify setup
-
-```powershell
-npx playwright --version
+npm ci
 npm run typecheck
+npm run test:coverage
 npm run build
+npm run build:pages
+node scripts/check-audit-coverage.mjs
 ```
 
-## 5. Quick PDF export smoke test
+For an authorized live test, install Playwright Chromium with `npx playwright install chromium`, then run `npm run test:e2e` and `npm run test:pages`. These commands launch browsers/servers. For manual work, `npm run dev` prints the local URL.
 
-```powershell
-npm run export:pdf -- --input samples/sample.md --output dist/exports/sample.pdf --page-size a4
-```
-
-If this command succeeds, setup is complete.
+PDF export uses Export PDF → Start export → the browser’s Save as PDF destination. There is no `export:pdf` CLI or server compiler. Follow [MANUAL_TESTING.md](MANUAL_TESTING.md) for the deferred live campaign.

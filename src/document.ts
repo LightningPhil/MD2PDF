@@ -68,6 +68,7 @@ export function applyDocumentStyle(settings: DocumentSettings): void {
   style.setProperty('--document-leading', String(settings.lineHeight));
   style.setProperty('--document-spacing', `${settings.spacing}em`);
   style.setProperty('--document-accent', settings.accent);
+  style.setProperty('--document-table-background', settings.preset === 'technical' ? '#eaf1f7' : settings.preset === 'notes' ? '#edf3e9' : '#f2f4f7');
   style.setProperty('--page-font-size', `${settings.fontSize}px`);
   style.setProperty('--page-margin', `${settings.margin}mm`);
   document.documentElement.dataset.documentPreset = settings.preset;

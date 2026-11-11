@@ -325,15 +325,16 @@ body {
     cursor: pointer;
 }
 
-#mathToggle {
-    min-width: 6.2rem;
-}
-
 body.export-modal-open {
     overflow: hidden;
 }
 
 .export-modal-backdrop {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    border: 0;
     position: fixed;
     inset: 0;
     z-index: 70;
@@ -420,63 +421,6 @@ body.export-modal-open {
 
 .export-scope-option input {
     accent-color: var(--accent);
-}
-
-.export-progress-panel {
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 0.6rem 0.7rem;
-    background: var(--surface-2);
-}
-
-.export-progress-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.8rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-bottom: 0.42rem;
-}
-
-.export-progress-track {
-    position: relative;
-    height: 0.52rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--surface-3) 70%, #000 30%);
-    overflow: hidden;
-}
-
-.export-progress-bar {
-    width: 0;
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, #66d6ff 30%), var(--accent));
-    transition: width 0.2s ease;
-}
-
-.export-log {
-    flex: 1;
-    min-height: 190px;
-    max-height: 38vh;
-    overflow: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--surface-2) 80%, #000 20%);
-    padding: 0.55rem 0.62rem;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 0.76rem;
-    line-height: 1.45;
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
-}
-
-.export-log-line {
-    margin-bottom: 0.28rem;
-    word-break: break-word;
-}
-
-.export-log-line:last-child {
-    margin-bottom: 0;
 }
 
 .export-modal-actions {
@@ -811,11 +755,19 @@ body.export-modal-open {
     .workspace-shell,
     .workspace-shell.sidebar-collapsed {
         grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
     }
 
     .document-sidebar {
-        display: none;
+        display: flex;
+        max-height: 180px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border-color);
+        overflow: auto;
     }
+
+    .document-sidebar .document-list { flex: 0 0 auto; }
+    .document-sidebar .outline-panel { flex: 0 0 auto; max-height: none; }
 
     .main-container {
         grid-template-columns: 1fr;
@@ -838,10 +790,6 @@ body.export-modal-open {
     .export-modal {
         width: min(96vw, 620px);
         max-height: 88vh;
-    }
-
-    .export-log {
-        max-height: 34vh;
     }
 
     .export-modal-actions {
@@ -1026,7 +974,7 @@ body.export-modal-open {
 #documentOutline button:hover { background: var(--surface-3); color: var(--text-primary); }
 .sidebar-collapsed .outline-panel { display: none; }
 body.focus-mode .document-sidebar, body.focus-mode .preview-pane, body.focus-mode .pane-divider { display: none; }
-body.focus-mode .workspace-shell, body.focus-mode .main-container { grid-template-columns: minmax(0, 1fr); }
+body.focus-mode .workspace-shell, body.focus-mode .main-container { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 body.focus-mode .editor-pane { width: 100%; max-width: 1000px; margin: 0 auto; }
 body.focus-mode #markdownEditor { font-size: 16px; line-height: 1.8; }
 .restoring-workspace #app { pointer-events: none; }
@@ -1049,9 +997,7 @@ math-field { width: 100%; min-height: 64px; padding: 12px; background: white; co
 .page-content h1, .page-content h2, .page-content h3, .page-content h4, .page-content h5, .page-content h6 { font-family: var(--document-heading-font, Georgia, serif); color: var(--document-accent, #333); margin-top: .7em; }
 .page-content > :first-child { margin-top: 0; }
 .page-content blockquote, .page-content pre { border-left-color: var(--document-accent, #2463a6); }
-.page-content th { background: #f2f4f7; }
-:root[data-document-preset='notes'] .page-content th { background: #edf3e9; }
-:root[data-document-preset='technical'] .page-content th { background: #eaf1f7; }
+.page-content th { background: var(--document-table-background, #f2f4f7); }
 .page-content img { max-width: 100%; height: auto; object-fit: contain; }
 .page-content figure { margin: 1em 0; break-inside: avoid; }
 .page-content figcaption { text-align: center; font-size: .9em; color: #555; margin-top: .5em; }
@@ -1090,4 +1036,4 @@ math-field { width: 100%; min-height: 64px; padding: 12px; background: white; co
   #browserPrintOutput section:last-child .page:last-child { break-after:auto; }
 }
 
-.export-progress-panel, #exportLog, #exportCancelBtn { display:none!important; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

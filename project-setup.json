@@ -31,11 +31,12 @@
   },
   "notes": {
     "fromProjectPlan": [
-      "Phase 1 is a previewer only; PDF export deferred to Phase 2",
-      "Split-pane UI: Markdown editor (left) + paginated A4 preview (right)",
-      "KaTeX for math rendering with HTML/SVG toggle option",
-      "Must handle clean page breaks (avoid mid-equation/table splits)",
-      "File controls: upload .md files and save .md files"
+      "Current scope: small engineering, report and academic Markdown documents",
+      "Browser-only authoring, local workspace autosave and portable ZIP packages",
+      "HTML KaTeX math and optional lazy visual equation editor; no SVG mode",
+      "Paginated portrait paper, output checks and native browser Save as PDF",
+      "No backend, full TeX compiler, bibliography engine or thesis project workflow",
+      "Historical ProjectPlan.md retained; docs/USE_CASES.md and docs/CODE_REVIEW.md describe current behaviour"
     ],
     "todos": [
       "Confirm remoteUrl matches actual GitHub repository or blank if undesired"

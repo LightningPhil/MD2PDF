@@ -32,12 +32,17 @@ export class DocumentNavigation {
     panel.querySelector('#findNext')!.addEventListener('click', () => this.find(1));
     panel.querySelector('#findPrevious')!.addEventListener('click', () => this.find(-1));
     panel.querySelector('#replaceOne')!.addEventListener('click', () => {
+      this.updateMatches();
+      this.matchIndex = Math.min(this.matchIndex, this.matches.length - 1);
       if (this.matchIndex < 0 || !this.matches.length) { this.find(1); return; }
       const start = this.matches[this.matchIndex];
       const value = panel.querySelector<HTMLInputElement>('#replaceText')!.value;
       const query = panel.querySelector<HTMLInputElement>('#findText')!.value;
       this.editor.replaceRange(start, start + query.length, value);
-      this.updateMatches(); this.matchIndex = this.matches.findIndex(offset => offset >= start + value.length) - 1; this.find(1);
+      this.updateMatches();
+      const next = this.matches.findIndex(offset => offset >= start + value.length);
+      this.matchIndex = next < 0 ? -1 : next - 1;
+      this.find(1);
     });
     panel.querySelector('#replaceAll')!.addEventListener('click', () => {
       this.updateMatches();
@@ -62,7 +67,7 @@ export class DocumentNavigation {
     this.textarea.addEventListener('scroll', () => this.schedule(() => this.syncFromEditor()));
     this.viewport.addEventListener('scroll', () => this.schedule(() => this.syncFromPreview()));
     this.preview.addEventListener('click', event => {
-      const target = event.target as HTMLElement;
+      const target = event.target as Element;
       const anchor = target.closest<HTMLAnchorElement>('a[href^="#"]');
       if (anchor) {
         const destination = Array.from(this.preview.querySelectorAll<HTMLElement>('[id]')).find(el => el.id === anchor.hash.slice(1));
@@ -156,15 +161,20 @@ export class DocumentNavigation {
   private updateMatches(): void {
     const query = this.findPanel.querySelector<HTMLInputElement>('#findText')!.value;
     const sensitive = this.findPanel.querySelector<HTMLInputElement>('#findCase')!.checked;
-    let content = this.editor.getContent(), needle = query;
-    if (!sensitive) { content = content.toLowerCase(); needle = needle.toLowerCase(); }
     this.matches = [];
-    if (needle) for (let offset = content.indexOf(needle); offset >= 0; offset = content.indexOf(needle, offset + needle.length)) this.matches.push(offset);
+    // Match in the original source: lowercasing characters such as İ changes offsets.
+    if (query) {
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(escaped, sensitive ? 'g' : 'gi');
+      this.matches = Array.from(this.editor.getContent().matchAll(pattern), match => match.index!);
+    }
     this.findPanel.querySelector('#findCount')!.textContent = `${this.matches.length} match${this.matches.length === 1 ? '' : 'es'}`;
   }
   private find(direction: number): void {
     this.updateMatches(); if (!this.matches.length) return;
-    this.matchIndex = (this.matchIndex + direction + this.matches.length) % this.matches.length;
+    this.matchIndex = this.matchIndex < 0
+      ? (direction < 0 ? this.matches.length - 1 : 0)
+      : (this.matchIndex + direction + this.matches.length) % this.matches.length;
     const start = this.matches[this.matchIndex];
     const query = this.findPanel.querySelector<HTMLInputElement>('#findText')!.value;
     const focused = document.activeElement as HTMLElement;
